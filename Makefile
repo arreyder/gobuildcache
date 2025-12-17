@@ -1,4 +1,4 @@
-.PHONY: all build test clean
+.PHONY: all build test clean test-integration
 
 # Binary name
 BINARY_NAME=gobuildcache
@@ -15,7 +15,7 @@ build:
 	go build -o $(BUILD_DIR)/$(BINARY_NAME) .
 
 # Run tests with the cache program
-test: build
+test-manual: build
 	@echo "Running tests with cache program..."
 	GOCACHEPROG="$(shell pwd)/$(BUILD_DIR)/$(BINARY_NAME)" DEBUG=true go test -v ./tests
 
@@ -32,4 +32,8 @@ run: build
 # Clear the cache
 clear: build
 	DEBUG=true $(BUILD_DIR)/$(BINARY_NAME) clear
+
+test:
+	@echo "Running tests..."
+	go test -v .
 

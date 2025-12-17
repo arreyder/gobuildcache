@@ -35,6 +35,7 @@ func NewDiskBackend(baseDir string, debug bool) (*DiskBackend, error) {
 func (d *DiskBackend) Put(actionID, outputID []byte, body io.Reader, bodySize int64) (string, error) {
 	// d.mu.Lock()
 	// defer d.mu.Unlock()
+	time.Sleep(10 * time.Millisecond)
 
 	if d.debug {
 		fmt.Fprintf(os.Stderr, "[DEBUG] Put: actionID=%s, outputID=%s, size=%d\n",
@@ -92,6 +93,7 @@ func (d *DiskBackend) Get(actionID []byte) ([]byte, string, int64, *time.Time, b
 	// d.mu.RLock()
 	// defer d.mu.RUnlock()
 
+	time.Sleep(10 * time.Millisecond)
 	if d.debug {
 		fmt.Fprintf(os.Stderr, "[DEBUG] Get: actionID=%s\n", hex.EncodeToString(actionID))
 	}

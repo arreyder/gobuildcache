@@ -1,0 +1,90 @@
+package main
+
+import (
+	"bytes"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestCacheIntegration(t *testing.T) {
+	workspaceDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+
+	var (
+		buildDir   = filepath.Join(workspaceDir, "builds")
+		binaryPath = filepath.Join(buildDir, "gobuildcache")
+		testsDir   = filepath.Join(workspaceDir, "tests")
+	)
+	t.Log("Step 1: Compiling the binary...")
+	if err := os.MkdirAll(buildDir, 0755); err != nil {
+		t.Fatalf("Failed to create build directory: %v", err)
+	}
+
+	buildCmd := exec.Command("go", "build", "-o", binaryPath, ".")
+	buildCmd.Dir = workspaceDir
+	buildOutput, err := buildCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Failed to compile binary: %v\nOutput: %s", err, buildOutput)
+	}
+	t.Log("✓ Binary compiled successfully")
+
+	t.Log("Step 2: Clearing the cache...")
+	clearCmd := exec.Command(binaryPath, "clear")
+	clearCmd.Dir = workspaceDir
+	clearOutput, err := clearCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Failed to clear cache: %v\nOutput: %s", err, clearOutput)
+	}
+	t.Logf("✓ Cache cleared successfully: %s", strings.TrimSpace(string(clearOutput)))
+
+	t.Log("Step 3: Running tests with cache program (first run)...")
+	firstRunCmd := exec.Command("go", "test", "-v", testsDir)
+	firstRunCmd.Dir = workspaceDir
+	firstRunCmd.Env = append(os.Environ(), "GOCACHEPROG="+binaryPath)
+
+	var firstRunOutput bytes.Buffer
+	firstRunCmd.Stdout = &firstRunOutput
+	firstRunCmd.Stderr = &firstRunOutput
+
+	if err := firstRunCmd.Run(); err != nil {
+		t.Fatalf("Tests failed on first run: %v\nOutput:\n%s", err, firstRunOutput.String())
+	}
+
+	t.Logf("First run output:\n%s", firstRunOutput.String())
+	t.Log("✓ Tests passed on first run")
+
+	if strings.Contains(firstRunOutput.String(), "(cached)") {
+		t.Fatal("First run should not be cached, but found '(cached)' in output")
+	}
+	t.Log("✓ First run was not cached (as expected)")
+
+	t.Log("Step 4: Running tests again to verify caching...")
+	secondRunCmd := exec.Command("go", "test", "-v", testsDir)
+	secondRunCmd.Dir = workspaceDir
+	secondRunCmd.Env = append(os.Environ(), "GOCACHEPROG="+binaryPath)
+
+	var secondRunOutput bytes.Buffer
+	secondRunCmd.Stdout = &secondRunOutput
+	secondRunCmd.Stderr = &secondRunOutput
+
+	if err := secondRunCmd.Run(); err != nil {
+		t.Fatalf("Tests failed on second run: %v\nOutput:\n%s", err, secondRunOutput.String())
+	}
+
+	t.Logf("Second run output:\n%s", secondRunOutput.String())
+	t.Log("✓ Tests passed on second run")
+
+	// Verify that results were cached
+	if strings.Contains(secondRunOutput.String(), "(cached)") {
+		t.Log("✓ Tests results were served from cache!")
+	} else {
+		t.Fatalf("Tests did not use cached results. Expected to see '(cached)' in the output.\nOutput:\n%s", secondRunOutput.String())
+	}
+
+	t.Log("=== All integration tests passed! ===")
+}

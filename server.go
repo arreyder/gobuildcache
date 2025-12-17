@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -46,23 +47,28 @@ type Response struct {
 
 // CacheProg implements the GOCACHEPROG protocol.
 type CacheProg struct {
-	backend    CacheBackend
-	reader     *bufio.Reader
-	writer     *bufio.Writer
-	writerLock sync.Mutex
-	debug      bool
-	putCount   atomic.Int64
-	getCount   atomic.Int64
-	hitCount   atomic.Int64
+	backend       CacheBackend
+	reader        *bufio.Reader
+	writer        *bufio.Writer
+	writerLock    sync.Mutex
+	debug         bool
+	putCount      atomic.Int64
+	getCount      atomic.Int64
+	hitCount      atomic.Int64
+	seenActionIDs map[string]int // Maps action ID to request count
+	seenLock      sync.Mutex
+	duplicateGets atomic.Int64
+	duplicatePuts atomic.Int64
 }
 
 // NewCacheProg creates a new cache program instance.
 func NewCacheProg(backend CacheBackend, debug bool) *CacheProg {
 	return &CacheProg{
-		backend: backend,
-		reader:  bufio.NewReader(os.Stdin),
-		writer:  bufio.NewWriter(os.Stdout),
-		debug:   debug,
+		backend:       backend,
+		reader:        bufio.NewReader(os.Stdin),
+		writer:        bufio.NewWriter(os.Stdout),
+		debug:         debug,
+		seenActionIDs: make(map[string]int),
 	}
 }
 
@@ -158,6 +164,23 @@ func (cp *CacheProg) ReadRequest() (*Request, error) {
 	return &req, nil
 }
 
+// trackActionID records an action ID and returns whether it's a duplicate.
+func (cp *CacheProg) trackActionID(actionID []byte) bool {
+	if !cp.debug {
+		return false
+	}
+
+	actionIDStr := hex.EncodeToString(actionID)
+
+	cp.seenLock.Lock()
+	defer cp.seenLock.Unlock()
+
+	count := cp.seenActionIDs[actionIDStr]
+	cp.seenActionIDs[actionIDStr] = count + 1
+
+	return count > 0 // It's a duplicate if we've seen it before
+}
+
 // HandleRequest processes a single request and sends a response.
 func (cp *CacheProg) HandleRequest(req *Request) error {
 	var resp Response
@@ -166,6 +189,14 @@ func (cp *CacheProg) HandleRequest(req *Request) error {
 	switch req.Command {
 	case CmdPut:
 		cp.putCount.Add(1)
+		isDuplicate := cp.trackActionID(req.ActionID)
+		if isDuplicate {
+			cp.duplicatePuts.Add(1)
+			if cp.debug {
+				fmt.Fprintf(os.Stderr, "[DEBUG] PUT duplicate action ID: %s\n", hex.EncodeToString(req.ActionID))
+			}
+		}
+
 		diskPath, err := cp.backend.Put(req.ActionID, req.OutputID, req.Body, req.BodySize)
 		if err != nil {
 			resp.Err = err.Error()
@@ -175,6 +206,14 @@ func (cp *CacheProg) HandleRequest(req *Request) error {
 
 	case CmdGet:
 		cp.getCount.Add(1)
+		isDuplicate := cp.trackActionID(req.ActionID)
+		if isDuplicate {
+			cp.duplicateGets.Add(1)
+			if cp.debug {
+				fmt.Fprintf(os.Stderr, "[DEBUG] GET duplicate action ID: %s\n", hex.EncodeToString(req.ActionID))
+			}
+		}
+
 		outputID, diskPath, size, putTime, miss, err := cp.backend.Get(req.ActionID)
 		if err != nil {
 			resp.Err = err.Error()
@@ -274,16 +313,28 @@ func (cp *CacheProg) Run() error {
 		getCount := cp.getCount.Load()
 		hitCount := cp.hitCount.Load()
 		putCount := cp.putCount.Load()
+		duplicateGets := cp.duplicateGets.Load()
+		duplicatePuts := cp.duplicatePuts.Load()
 		missCount := getCount - hitCount
 		hitRate := 0.0
 		if getCount > 0 {
 			hitRate = float64(hitCount) / float64(getCount) * 100
 		}
+
+		cp.seenLock.Lock()
+		uniqueActionIDs := len(cp.seenActionIDs)
+		cp.seenLock.Unlock()
+
 		fmt.Fprintf(os.Stderr, "[DEBUG] Cache statistics:\n")
 		fmt.Fprintf(os.Stderr, "[DEBUG]   GET operations: %d (hits: %d, misses: %d, hit rate: %.1f%%)\n",
 			getCount, hitCount, missCount, hitRate)
+		fmt.Fprintf(os.Stderr, "[DEBUG]     Duplicate GETs: %d (%.1f%% of GETs)\n",
+			duplicateGets, float64(duplicateGets)/float64(getCount)*100)
 		fmt.Fprintf(os.Stderr, "[DEBUG]   PUT operations: %d\n", putCount)
+		fmt.Fprintf(os.Stderr, "[DEBUG]     Duplicate PUTs: %d (%.1f%% of PUTs)\n",
+			duplicatePuts, float64(duplicatePuts)/float64(putCount)*100)
 		fmt.Fprintf(os.Stderr, "[DEBUG]   Total operations: %d\n", getCount+putCount)
+		fmt.Fprintf(os.Stderr, "[DEBUG]   Unique action IDs: %d\n", uniqueActionIDs)
 	}
 
 	return nil
