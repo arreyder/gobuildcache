@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -58,7 +59,8 @@ type CacheProg struct {
 		w *bufio.Writer
 	}
 
-	debug bool
+	debug  bool
+	logger *slog.Logger
 
 	// Singleflight group to deduplicate concurrent requests
 	sfGroup singleflight.Group
@@ -79,10 +81,22 @@ type CacheProg struct {
 
 // NewCacheProg creates a new cache program instance.
 func NewCacheProg(backend backends.Backend, debug bool) *CacheProg {
+	// Configure logger level based on debug flag
+	logLevel := slog.LevelInfo
+	if debug {
+		logLevel = slog.LevelDebug
+	}
+
+	// Create logger that writes to stderr
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: logLevel,
+	}))
+
 	cp := &CacheProg{
 		backend: backend,
 		reader:  bufio.NewReader(os.Stdin),
 		debug:   debug,
+		logger:  logger,
 	}
 	cp.writer.w = bufio.NewWriter(os.Stdout)
 	cp.seenActionIDs.ids = make(map[string]int)
@@ -212,8 +226,8 @@ type putResult struct {
 	diskPath string
 }
 
-// HandleRequest processes a single request and sends a response.
-func (cp *CacheProg) HandleRequest(req *Request) error {
+// HandleRequest processes a single request and returns a response.
+func (cp *CacheProg) HandleRequest(req *Request) (Response, error) {
 	var resp Response
 	resp.ID = req.ID
 
@@ -243,10 +257,12 @@ func (cp *CacheProg) HandleRequest(req *Request) error {
 
 		if err != nil {
 			resp.Err = err.Error()
-		} else {
-			result := v.(*putResult)
-			resp.DiskPath = result.diskPath
+			return resp, err
 		}
+
+		result := v.(*putResult)
+		resp.DiskPath = result.diskPath
+		return resp, nil
 
 	case CmdGet:
 		cp.getCount.Add(1)
@@ -258,7 +274,6 @@ func (cp *CacheProg) HandleRequest(req *Request) error {
 			}
 		}
 
-		// Use singleflight to deduplicate concurrent GETs for the same actionID
 		key := "get:" + hex.EncodeToString(req.ActionID)
 		v, err, shared := cp.sfGroup.Do(key, func() (interface{}, error) {
 			outputID, diskPath, size, putTime, miss, err := cp.backend.Get(req.ActionID)
@@ -280,30 +295,31 @@ func (cp *CacheProg) HandleRequest(req *Request) error {
 
 		if err != nil {
 			resp.Err = err.Error()
-		} else {
-			result := v.(*getResult)
-
-			resp.Miss = result.miss
-			if !result.miss {
-				cp.hitCount.Add(1)
-				resp.OutputID = result.outputID
-				resp.DiskPath = result.diskPath
-				resp.Size = result.size
-				resp.Time = result.putTime
-			}
+			return resp, err
 		}
+
+		result := v.(*getResult)
+		resp.Miss = result.miss
+		if !result.miss {
+			cp.hitCount.Add(1)
+			resp.OutputID = result.outputID
+			resp.DiskPath = result.diskPath
+			resp.Size = result.size
+			resp.Time = result.putTime
+		}
+		return resp, nil
 
 	case CmdClose:
 		if err := cp.backend.Close(); err != nil {
 			resp.Err = err.Error()
+			return resp, err
 		}
-		// Will exit after sending response
+		return resp, nil
 
 	default:
 		resp.Err = fmt.Sprintf("unknown command: %s", req.Command)
+		return resp, fmt.Errorf("unknown command: %s", req.Command)
 	}
-
-	return cp.SendResponse(resp)
 }
 
 // Run starts the cache program and processes requests concurrently.
@@ -329,13 +345,28 @@ func (cp *CacheProg) Run() error {
 			return fmt.Errorf("failed to read request: %w", err)
 		}
 
+		requestLogger := cp.logger.With("command", req.Command, "actionID", hex.EncodeToString(req.ActionID))
+
 		// Check if this is a close command
 		if req.Command == CmdClose {
+			requestLogger.Debug("close command received, waiting for pending requests to complete")
 			// Wait for all pending requests to complete before handling close
 			wg.Wait()
-			if err := cp.HandleRequest(req); err != nil {
-				return fmt.Errorf("failed to handle close request: %w", err)
+			requestLogger.Debug("pending requests completed, handling close command in backend")
+			resp, err := cp.HandleRequest(req)
+			if err != nil {
+				requestLogger.Error("failed to handle close request in backend", "error", err)
+			} else {
+				requestLogger.Debug("close command handled in backend")
 			}
+			if err != nil {
+				resp.Err = err.Error()
+			}
+			if err := cp.SendResponse(resp); err != nil {
+				requestLogger.Error("failed to send close response, exiting...", "error", err)
+				return fmt.Errorf("failed to send close response: %w", err)
+			}
+			requestLogger.Debug("close command received, exited successfully")
 			break
 		}
 
@@ -343,7 +374,13 @@ func (cp *CacheProg) Run() error {
 		wg.Add(1)
 		go func(r *Request) {
 			defer wg.Done()
-			if err := cp.HandleRequest(r); err != nil {
+			resp, err := cp.HandleRequest(r)
+			if err != nil {
+				requestLogger.Error("failed to handle request in backend", "command", req.Command, "error", err)
+			} else {
+				requestLogger.Debug("command handled in backend")
+			}
+			if err := cp.SendResponse(resp); err != nil {
 				select {
 				case errChan <- err:
 				default:
@@ -355,7 +392,7 @@ func (cp *CacheProg) Run() error {
 		select {
 		case err := <-errChan:
 			wg.Wait()
-			return fmt.Errorf("failed to handle request: %w", err)
+			return fmt.Errorf("failed to send response: %w", err)
 		default:
 		}
 	}
@@ -370,7 +407,7 @@ func (cp *CacheProg) Run() error {
 	case <-done:
 	case err := <-errChan:
 		wg.Wait()
-		return fmt.Errorf("failed to handle request: %w", err)
+		return fmt.Errorf("failed to send response: %w", err)
 	}
 
 	// Print statistics in debug mode
