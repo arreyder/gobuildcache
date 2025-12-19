@@ -38,7 +38,7 @@ func TestCacheIntegrationS3(t *testing.T) {
 	var (
 		buildDir   = filepath.Join(workspaceDir, "builds")
 		binaryPath = filepath.Join(buildDir, "gobuildcache")
-		testsDir   = filepath.Join(workspaceDir, "tests")
+		testsDir   = filepath.Join(workspaceDir, "faketests")
 		// Use a unique bucket prefix to avoid conflicts with concurrent tests
 		bucketPrefix = fmt.Sprintf("test-cache-%d", time.Now().Unix())
 	)
@@ -182,7 +182,7 @@ func TestCacheIntegrationS3(t *testing.T) {
 // 	var (
 // 		buildDir     = filepath.Join(workspaceDir, "builds")
 // 		binaryPath   = filepath.Join(buildDir, "gobuildcache")
-// 		testsDir     = filepath.Join(workspaceDir, "tests")
+// 		testsDir     = filepath.Join(workspaceDir, "faketests")
 // 		bucketPrefix = fmt.Sprintf("test-concurrent-%d", time.Now().Unix())
 // 	)
 

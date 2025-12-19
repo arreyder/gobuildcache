@@ -18,7 +18,7 @@ func TestCacheIntegration(t *testing.T) {
 	var (
 		buildDir   = filepath.Join(workspaceDir, "builds")
 		binaryPath = filepath.Join(buildDir, "gobuildcache")
-		testsDir   = filepath.Join(workspaceDir, "tests")
+		testsDir   = filepath.Join(workspaceDir, "faketests")
 		cacheDir   = filepath.Join(workspaceDir, "test-cache")
 	)
 

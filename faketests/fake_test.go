@@ -1,4 +1,4 @@
-package tests
+package faketests
 
 import "testing"
 
@@ -72,4 +72,3 @@ func TestSimpleComparison(t *testing.T) {
 		t.Errorf("Expected %d to equal %d", a, b)
 	}
 }
-
