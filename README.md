@@ -44,6 +44,7 @@ All configuration options can be set via **command-line flags** or **environment
 | `-s3-prefix` | `S3_PREFIX` | (empty) | S3 key prefix |
 | `-s3-tmp-dir` | `S3_TMP_DIR` | `/tmp/gobuildcache-s3` | Local temp directory for S3 |
 | `-debug` | `DEBUG` | `false` | Enable debug logging |
+| `-stats` | `PRINT_STATS` | `false` | Print cache statistics on exit |
 
 ## Storage Backends
 
@@ -134,12 +135,19 @@ gobuildcache -backend=s3 -s3-bucket=my-cache-bucket
 
 # With debug logging
 gobuildcache -debug
+
+# With statistics (prints stats on exit)
+gobuildcache -stats
+
+# Both debug and statistics
+gobuildcache -debug -stats
 ```
 
 The server will:
 1. Read from stdin (Go sends cache requests)
 2. Write responses to stdout
 3. Log debug information to stderr (if `-debug` flag is set)
+4. Print cache statistics to stderr on exit (if `-stats` flag is set)
 
 ### Configuring Go to Use the Cache
 

@@ -62,8 +62,9 @@ type CacheProg struct {
 		w *bufio.Writer
 	}
 
-	debug  bool
-	logger *slog.Logger
+	debug      bool
+	printStats bool
+	logger     *slog.Logger
 
 	// Singleflight group to deduplicate concurrent requests
 	sfGroup singleflight.Group
@@ -86,7 +87,7 @@ type CacheProg struct {
 
 // NewCacheProg creates a new cache program instance.
 // cacheDir is the local directory where cached files are stored for Go build tools to access.
-func NewCacheProg(backend backends.Backend, cacheDir string, debug bool) (*CacheProg, error) {
+func NewCacheProg(backend backends.Backend, cacheDir string, debug bool, printStats bool) (*CacheProg, error) {
 	// Configure logger level based on debug flag
 	logLevel := slog.LevelInfo
 	if debug {
@@ -109,6 +110,7 @@ func NewCacheProg(backend backends.Backend, cacheDir string, debug bool) (*Cache
 		localCache: localCache,
 		reader:     bufio.NewReader(os.Stdin),
 		debug:      debug,
+		printStats: printStats,
 		logger:     logger,
 	}
 	cp.writer.w = bufio.NewWriter(os.Stdout)
@@ -584,8 +586,8 @@ func (cp *CacheProg) Run() error {
 		return fmt.Errorf("failed to send response: %w", err)
 	}
 
-	// Print statistics in debug mode
-	if cp.debug {
+	// Print statistics if enabled
+	if cp.printStats {
 		getCount := cp.getCount.Load()
 		hitCount := cp.hitCount.Load()
 		putCount := cp.putCount.Load()
@@ -607,25 +609,25 @@ func (cp *CacheProg) Run() error {
 
 		totalOps := getCount + putCount
 
-		fmt.Fprintf(os.Stderr, "[DEBUG] Cache statistics:\n")
-		fmt.Fprintf(os.Stderr, "[DEBUG]   GET operations: %d (hits: %d, misses: %d, hit rate: %.1f%%)\n",
+		fmt.Fprintf(os.Stderr, "Cache statistics:\n")
+		fmt.Fprintf(os.Stderr, "  GET operations: %d (hits: %d, misses: %d, hit rate: %.1f%%)\n",
 			getCount, hitCount, missCount, hitRate)
-		fmt.Fprintf(os.Stderr, "[DEBUG]     Duplicate GETs: %d (%.1f%% of GETs)\n",
+		fmt.Fprintf(os.Stderr, "    Duplicate GETs: %d (%.1f%% of GETs)\n",
 			duplicateGets, float64(duplicateGets)/float64(getCount)*100)
-		fmt.Fprintf(os.Stderr, "[DEBUG]     Deduplicated GETs (singleflight): %d (%.1f%% of GETs)\n",
+		fmt.Fprintf(os.Stderr, "    Deduplicated GETs (singleflight): %d (%.1f%% of GETs)\n",
 			deduplicatedGets, float64(deduplicatedGets)/float64(getCount)*100)
-		fmt.Fprintf(os.Stderr, "[DEBUG]   PUT operations: %d\n", putCount)
-		fmt.Fprintf(os.Stderr, "[DEBUG]     Duplicate PUTs: %d (%.1f%% of PUTs)\n",
+		fmt.Fprintf(os.Stderr, "  PUT operations: %d\n", putCount)
+		fmt.Fprintf(os.Stderr, "    Duplicate PUTs: %d (%.1f%% of PUTs)\n",
 			duplicatePuts, float64(duplicatePuts)/float64(putCount)*100)
-		fmt.Fprintf(os.Stderr, "[DEBUG]     Deduplicated PUTs (singleflight): %d (%.1f%% of PUTs)\n",
+		fmt.Fprintf(os.Stderr, "    Deduplicated PUTs (singleflight): %d (%.1f%% of PUTs)\n",
 			deduplicatedPuts, float64(deduplicatedPuts)/float64(putCount)*100)
-		fmt.Fprintf(os.Stderr, "[DEBUG]   Total operations: %d\n", totalOps)
-		fmt.Fprintf(os.Stderr, "[DEBUG]   Unique action IDs: %d\n", uniqueActionIDs)
+		fmt.Fprintf(os.Stderr, "  Total operations: %d\n", totalOps)
+		fmt.Fprintf(os.Stderr, "  Unique action IDs: %d\n", uniqueActionIDs)
 		if retriedRequests > 0 {
 			avgRetries := float64(totalRetries) / float64(retriedRequests)
-			fmt.Fprintf(os.Stderr, "[DEBUG]   Retried requests: %d (%.1f%% of operations)\n",
+			fmt.Fprintf(os.Stderr, "  Retried requests: %d (%.1f%% of operations)\n",
 				retriedRequests, float64(retriedRequests)/float64(totalOps)*100)
-			fmt.Fprintf(os.Stderr, "[DEBUG]   Total retries: %d (avg %.1f retries per failed request)\n",
+			fmt.Fprintf(os.Stderr, "  Total retries: %d (avg %.1f retries per failed request)\n",
 				totalRetries, avgRetries)
 		}
 	}

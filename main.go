@@ -13,6 +13,7 @@ import (
 // Global flags
 var (
 	debug       bool
+	printStats  bool
 	backendType string
 	cacheDir    string
 	s3Bucket    string
@@ -49,6 +50,7 @@ func runServerCommand() {
 
 	// Get defaults from environment variables
 	debugDefault := getEnvBool("DEBUG", false)
+	printStatsDefault := getEnvBool("PRINT_STATS", true)
 	backendDefault := getEnv("BACKEND_TYPE", getEnv("BACKEND", "disk"))
 	cacheDirDefault := getEnv("CACHE_DIR", filepath.Join(os.TempDir(), "gobuildcache"))
 	s3BucketDefault := getEnv("S3_BUCKET", "")
@@ -57,6 +59,7 @@ func runServerCommand() {
 	errorRateDefault := getEnvFloat("ERROR_RATE", 0.0)
 
 	serverFlags.BoolVar(&debug, "debug", debugDefault, "Enable debug logging to stderr (env: DEBUG)")
+	serverFlags.BoolVar(&printStats, "stats", printStatsDefault, "Print cache statistics on exit (env: PRINT_STATS)")
 	serverFlags.StringVar(&backendType, "backend", backendDefault, "Backend type: disk (local only), s3 (env: BACKEND_TYPE)")
 	serverFlags.StringVar(&cacheDir, "cache-dir", cacheDirDefault, "Local cache directory (env: CACHE_DIR)")
 	serverFlags.StringVar(&s3Bucket, "s3-bucket", s3BucketDefault, "S3 bucket name (required for s3 backend) (env: S3_BUCKET)")
@@ -71,6 +74,7 @@ func runServerCommand() {
 		serverFlags.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nEnvironment Variables:\n")
 		fmt.Fprintf(os.Stderr, "  DEBUG          Enable debug logging (true/false)\n")
+		fmt.Fprintf(os.Stderr, "  PRINT_STATS    Print cache statistics on exit (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  BACKEND_TYPE   Backend type (disk, s3)\n")
 		fmt.Fprintf(os.Stderr, "  CACHE_DIR      Local cache directory\n")
 		fmt.Fprintf(os.Stderr, "  S3_BUCKET      S3 bucket name\n")
@@ -117,6 +121,7 @@ func runClearCommand() {
 		clearFlags.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nEnvironment Variables:\n")
 		fmt.Fprintf(os.Stderr, "  DEBUG          Enable debug logging (true/false)\n")
+		fmt.Fprintf(os.Stderr, "  PRINT_STATS    Print cache statistics on exit (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  BACKEND_TYPE   Backend type (disk, s3)\n")
 		fmt.Fprintf(os.Stderr, "  CACHE_DIR      Local cache directory\n")
 		fmt.Fprintf(os.Stderr, "  S3_BUCKET      S3 bucket name\n")
@@ -159,7 +164,7 @@ func runServer() {
 	defer backend.Close()
 
 	// Create and run cache program
-	prog, err := NewCacheProg(backend, cacheDir, debug)
+	prog, err := NewCacheProg(backend, cacheDir, debug, printStats)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating cache program: %v\n", err)
 		os.Exit(1)
