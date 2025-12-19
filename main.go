@@ -179,13 +179,35 @@ func runClear() {
 	}
 	defer backend.Close()
 
-	// Clear the cache
+	// Clear the backend (remote storage)
 	if err := backend.Clear(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error clearing cache: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error clearing backend cache: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Clear the local cache directory
+	if err := clearLocalCache(cacheDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error clearing local cache: %v\n", err)
 		os.Exit(1)
 	}
 
 	fmt.Fprintf(os.Stdout, "Cache cleared successfully\n")
+}
+
+// clearLocalCache removes all entries from the local cache directory.
+func clearLocalCache(cacheDir string) error {
+	// Remove the entire directory and recreate it
+	// os.RemoveAll is idempotent - it doesn't error if path doesn't exist
+	if err := os.RemoveAll(cacheDir); err != nil {
+		return fmt.Errorf("failed to remove cache directory: %w", err)
+	}
+
+	// Recreate the directory
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		return fmt.Errorf("failed to recreate cache directory: %w", err)
+	}
+
+	return nil
 }
 
 func createBackend() (backends.Backend, error) {
