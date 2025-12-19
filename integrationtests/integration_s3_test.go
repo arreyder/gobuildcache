@@ -1,4 +1,4 @@
-package main
+package integrationtests
 
 import (
 	"bytes"
@@ -30,10 +30,12 @@ func TestCacheIntegrationS3(t *testing.T) {
 		t.Fatal("AWS_SECRET_ACCESS_KEY environment variable not set")
 	}
 
-	workspaceDir, err := os.Getwd()
+	currentDir, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Failed to get working directory: %v", err)
 	}
+	// Go up one directory since we're in integrationtests/
+	workspaceDir := filepath.Join(currentDir, "..")
 
 	var (
 		buildDir   = filepath.Join(workspaceDir, "builds")
@@ -174,10 +176,12 @@ func TestCacheIntegrationS3(t *testing.T) {
 // 		t.Fatal("AWS_SECRET_ACCESS_KEY environment variable not set")
 // 	}
 
-// 	workspaceDir, err := os.Getwd()
+// 	currentDir, err := os.Getwd()
 // 	if err != nil {
 // 		t.Fatalf("Failed to get working directory: %v", err)
 // 	}
+// 	// Go up one directory since we're in integrationtests/
+// 	workspaceDir := filepath.Join(currentDir, "..")
 
 // 	var (
 // 		buildDir     = filepath.Join(workspaceDir, "builds")

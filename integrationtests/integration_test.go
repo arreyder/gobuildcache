@@ -1,4 +1,4 @@
-package main
+package integrationtests
 
 import (
 	"bytes"
@@ -10,10 +10,12 @@ import (
 )
 
 func TestCacheIntegration(t *testing.T) {
-	workspaceDir, err := os.Getwd()
+	currentDir, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Failed to get working directory: %v", err)
 	}
+	// Go up one directory since we're in integrationtests/
+	workspaceDir := filepath.Join(currentDir, "..")
 
 	var (
 		buildDir   = filepath.Join(workspaceDir, "builds")
