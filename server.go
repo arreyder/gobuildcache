@@ -247,157 +247,10 @@ func (cp *CacheProg) HandleRequest(req *Request) (Response, error) {
 
 	switch req.Command {
 	case CmdPut:
-		cp.putCount.Add(1)
-		isDuplicate := cp.trackActionID(req.ActionID)
-		if isDuplicate {
-			cp.duplicatePuts.Add(1)
-			if cp.debug {
-				fmt.Fprintf(os.Stderr, "[DEBUG] PUT duplicate action ID: %s\n", hex.EncodeToString(req.ActionID))
-			}
-		}
-
-		key := "put:" + hex.EncodeToString(req.ActionID)
-		v, err, shared := cp.sfGroup.Do(key, func() (interface{}, error) {
-			// Read body into memory (we need to write it to both local cache and backend)
-			var bodyData []byte
-			if req.BodySize > 0 && req.Body != nil {
-				bodyData = make([]byte, req.BodySize)
-				n, err := io.ReadFull(req.Body, bodyData)
-				if err != nil && err != io.EOF {
-					return nil, fmt.Errorf("failed to read body: %w", err)
-				}
-				if int64(n) != req.BodySize {
-					return nil, fmt.Errorf("size mismatch: expected %d, read %d", req.BodySize, n)
-				}
-			}
-
-			// Write to local cache with metadata
-			meta := localCacheMetadata{
-				OutputID: req.OutputID,
-				Size:     req.BodySize,
-				PutTime:  time.Now(),
-			}
-			diskPath, err := cp.localCache.writeWithMetadata(req.ActionID, bytes.NewReader(bodyData), meta)
-			if err != nil {
-				return nil, fmt.Errorf("failed to write to local cache: %w", err)
-			}
-
-			// Store in backend
-			err = cp.backend.Put(req.ActionID, req.OutputID, bytes.NewReader(bodyData), req.BodySize)
-			if err != nil {
-				// Local cache is still valid even if backend fails
-				cp.logger.Warn("backend PUT failed, but local cache succeeded",
-					"actionID", hex.EncodeToString(req.ActionID),
-					"error", err)
-			}
-
-			return &putResult{diskPath: diskPath}, nil
-		})
-
-		if shared {
-			cp.deduplicatedPuts.Add(1)
-			if cp.debug {
-				fmt.Fprintf(os.Stderr, "[DEBUG] PUT deduplicated (shared result): %s\n", hex.EncodeToString(req.ActionID))
-			}
-		}
-
-		if err != nil {
-			resp.Err = err.Error()
-			return resp, err
-		}
-
-		result := v.(*putResult)
-		resp.DiskPath = result.diskPath
-		return resp, nil
+		return cp.handlePut(req)
 
 	case CmdGet:
-		cp.getCount.Add(1)
-		isDuplicate := cp.trackActionID(req.ActionID)
-		if isDuplicate {
-			cp.duplicateGets.Add(1)
-			if cp.debug {
-				fmt.Fprintf(os.Stderr, "[DEBUG] GET duplicate action ID: %s\n", hex.EncodeToString(req.ActionID))
-			}
-		}
-
-		key := "get:" + hex.EncodeToString(req.ActionID)
-		v, err, shared := cp.sfGroup.Do(key, func() (interface{}, error) {
-			// Check local cache first
-			if meta := cp.localCache.check(req.ActionID); meta != nil {
-				// Local cache hit with metadata
-				diskPath := cp.localCache.getPath(req.ActionID)
-
-				return &getResult{
-					outputID: meta.OutputID,
-					diskPath: diskPath,
-					size:     meta.Size,
-					putTime:  &meta.PutTime,
-					miss:     false,
-				}, nil
-			}
-
-			// Local cache miss - get from backend
-			outputID, body, size, putTime, miss, err := cp.backend.Get(req.ActionID)
-			if err != nil {
-				return nil, err
-			}
-
-			if miss {
-				// Backend miss
-				return &getResult{
-					miss: true,
-				}, nil
-			}
-
-			// Backend hit - write to local cache with metadata
-			defer body.Close()
-			meta := localCacheMetadata{
-				OutputID: outputID,
-				Size:     size,
-				PutTime:  *putTime,
-			}
-			diskPath, err := cp.localCache.writeWithMetadata(req.ActionID, body, meta)
-			if err != nil {
-				cp.logger.Warn("failed to write to local cache after backend hit",
-					"actionID", hex.EncodeToString(req.ActionID),
-					"error", err)
-				// We got data from backend but couldn't cache it locally
-				// This is not fatal - we can still serve from backend
-				return nil, fmt.Errorf("failed to cache locally: %w", err)
-			}
-
-			return &getResult{
-				outputID: outputID,
-				diskPath: diskPath,
-				size:     size,
-				putTime:  putTime,
-				miss:     false,
-			}, nil
-		})
-
-		if shared {
-			cp.deduplicatedGets.Add(1)
-			if cp.debug {
-				fmt.Fprintf(os.Stderr, "[DEBUG] GET deduplicated (shared result): %s\n", hex.EncodeToString(req.ActionID))
-			}
-		}
-
-		if err != nil {
-			resp.Err = err.Error()
-			resp.Miss = true
-			return resp, err
-		}
-
-		result := v.(*getResult)
-		resp.Miss = result.miss
-		if !result.miss {
-			cp.hitCount.Add(1)
-			resp.OutputID = result.outputID
-			resp.DiskPath = result.diskPath
-			resp.Size = result.size
-			resp.Time = result.putTime
-		}
-		return resp, nil
+		return cp.handleGet(req)
 
 	case CmdClose:
 		if err := cp.backend.Close(); err != nil {
@@ -412,6 +265,171 @@ func (cp *CacheProg) HandleRequest(req *Request) (Response, error) {
 	}
 }
 
+// handlePut processes a PUT request.
+func (cp *CacheProg) handlePut(req *Request) (Response, error) {
+	var resp Response
+	resp.ID = req.ID
+
+	cp.putCount.Add(1)
+	isDuplicate := cp.trackActionID(req.ActionID)
+	if isDuplicate {
+		cp.duplicatePuts.Add(1)
+		if cp.debug {
+			fmt.Fprintf(os.Stderr, "[DEBUG] PUT duplicate action ID: %s\n", hex.EncodeToString(req.ActionID))
+		}
+	}
+
+	key := "put:" + hex.EncodeToString(req.ActionID)
+	v, err, shared := cp.sfGroup.Do(key, func() (interface{}, error) {
+		// Read body into memory (we need to write it to both local cache and backend)
+		var bodyData []byte
+		if req.BodySize > 0 && req.Body != nil {
+			bodyData = make([]byte, req.BodySize)
+			n, err := io.ReadFull(req.Body, bodyData)
+			if err != nil && err != io.EOF {
+				return nil, fmt.Errorf("failed to read body: %w", err)
+			}
+			if int64(n) != req.BodySize {
+				return nil, fmt.Errorf("size mismatch: expected %d, read %d", req.BodySize, n)
+			}
+		}
+
+		// Write to local cache with metadata
+		meta := localCacheMetadata{
+			OutputID: req.OutputID,
+			Size:     req.BodySize,
+			PutTime:  time.Now(),
+		}
+		diskPath, err := cp.localCache.writeWithMetadata(req.ActionID, bytes.NewReader(bodyData), meta)
+		if err != nil {
+			return nil, fmt.Errorf("failed to write to local cache: %w", err)
+		}
+
+		// Store in backend
+		err = cp.backend.Put(req.ActionID, req.OutputID, bytes.NewReader(bodyData), req.BodySize)
+		if err != nil {
+			// Local cache is still valid even if backend fails
+			cp.logger.Warn("backend PUT failed, but local cache succeeded",
+				"actionID", hex.EncodeToString(req.ActionID),
+				"error", err)
+		}
+
+		return &putResult{diskPath: diskPath}, nil
+	})
+
+	if shared {
+		cp.deduplicatedPuts.Add(1)
+		if cp.debug {
+			fmt.Fprintf(os.Stderr, "[DEBUG] PUT deduplicated (shared result): %s\n", hex.EncodeToString(req.ActionID))
+		}
+	}
+
+	if err != nil {
+		resp.Err = err.Error()
+		return resp, err
+	}
+
+	result := v.(*putResult)
+	resp.DiskPath = result.diskPath
+	return resp, nil
+}
+
+// handleGet processes a GET request.
+func (cp *CacheProg) handleGet(req *Request) (Response, error) {
+	var resp Response
+	resp.ID = req.ID
+
+	cp.getCount.Add(1)
+	isDuplicate := cp.trackActionID(req.ActionID)
+	if isDuplicate {
+		cp.duplicateGets.Add(1)
+		if cp.debug {
+			fmt.Fprintf(os.Stderr, "[DEBUG] GET duplicate action ID: %s\n", hex.EncodeToString(req.ActionID))
+		}
+	}
+
+	key := "get:" + hex.EncodeToString(req.ActionID)
+	v, err, shared := cp.sfGroup.Do(key, func() (interface{}, error) {
+		// Check local cache first
+		if meta := cp.localCache.check(req.ActionID); meta != nil {
+			// Local cache hit with metadata
+			diskPath := cp.localCache.getPath(req.ActionID)
+
+			return &getResult{
+				outputID: meta.OutputID,
+				diskPath: diskPath,
+				size:     meta.Size,
+				putTime:  &meta.PutTime,
+				miss:     false,
+			}, nil
+		}
+
+		// Local cache miss - get from backend
+		outputID, body, size, putTime, miss, err := cp.backend.Get(req.ActionID)
+		if err != nil {
+			return nil, err
+		}
+
+		if miss {
+			// Backend miss
+			return &getResult{
+				miss: true,
+			}, nil
+		}
+
+		// Backend hit - write to local cache with metadata
+		defer body.Close()
+		meta := localCacheMetadata{
+			OutputID: outputID,
+			Size:     size,
+			PutTime:  *putTime,
+		}
+		diskPath, err := cp.localCache.writeWithMetadata(req.ActionID, body, meta)
+		if err != nil {
+			cp.logger.Warn("failed to write to local cache after backend hit",
+				"actionID", hex.EncodeToString(req.ActionID),
+				"error", err)
+			// We got data from backend but couldn't cache it locally
+			// This is not fatal - we can still serve from backend
+			return nil, fmt.Errorf("failed to cache locally: %w", err)
+		}
+
+		return &getResult{
+			outputID: outputID,
+			diskPath: diskPath,
+			size:     size,
+			putTime:  putTime,
+			miss:     false,
+		}, nil
+	})
+
+	if shared {
+		cp.deduplicatedGets.Add(1)
+		if cp.debug {
+			fmt.Fprintf(os.Stderr, "[DEBUG] GET deduplicated (shared result): %s\n", hex.EncodeToString(req.ActionID))
+		}
+	}
+
+	if err != nil {
+		resp.Err = err.Error()
+		resp.Miss = true
+		return resp, err
+	}
+
+	result := v.(*getResult)
+	resp.Miss = result.miss
+	if !result.miss {
+		cp.hitCount.Add(1)
+		resp.OutputID = result.outputID
+		resp.DiskPath = result.diskPath
+		resp.Size = result.size
+		resp.Time = result.putTime
+	}
+	return resp, nil
+}
+
+// **** This function is unused right now *****
+//
 // HandleRequestWithRetries wraps HandleRequest with retry logic.
 // It will retry failed requests up to maxRetries times with exponential backoff.
 // maxRetries of 0 means no retries (same as calling HandleRequest directly).

@@ -4,7 +4,8 @@ A remote caching server for Go builds that supports multiple storage backends.
 
 ## TODOs
 
-1. Singleflight in server.go
+1. Actually use HandleRequestWithRetries instead of HandleRequest.
+2. We should have writes to the backend be async so they don't slow the compiler down.
 
 ## Features
 

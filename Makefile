@@ -27,11 +27,11 @@ clean:
 
 # Run the cache server directly
 run: build
-	DEBUG=true $(BUILD_DIR)/$(BINARY_NAME)
+	$(BUILD_DIR)/$(BINARY_NAME)
 
 # Clear the cache
 clear: build
-	DEBUG=true $(BUILD_DIR)/$(BINARY_NAME) clear
+	$(BUILD_DIR)/$(BINARY_NAME) clear
 
 test:
 	@echo "Running short tests..."
