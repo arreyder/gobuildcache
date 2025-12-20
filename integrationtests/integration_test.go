@@ -126,17 +126,17 @@ func TestCacheIntegrationConcurrentProcesses(t *testing.T) {
 	workspaceDir := filepath.Join(currentDir, "..")
 
 	var (
-		buildDir      = filepath.Join(workspaceDir, "builds")
-		binaryPath    = filepath.Join(buildDir, "gobuildcache")
-		testsDir      = filepath.Join(workspaceDir, "faketests")
-		cacheDir      = filepath.Join(workspaceDir, "test-cache-concurrent")
-		dedupeLockDir = filepath.Join(workspaceDir, "test-dedupe-locks")
-		numProcesses  = 10 // Number of concurrent processes to run
+		buildDir     = filepath.Join(workspaceDir, "builds")
+		binaryPath   = filepath.Join(buildDir, "gobuildcache")
+		testsDir     = filepath.Join(workspaceDir, "faketests")
+		cacheDir     = filepath.Join(workspaceDir, "test-cache-concurrent")
+		lockDir      = filepath.Join(workspaceDir, "test-locks")
+		numProcesses = 10 // Number of concurrent processes to run
 	)
 
 	// Clean up test directories at the end
 	defer os.RemoveAll(cacheDir)
-	defer os.RemoveAll(dedupeLockDir)
+	defer os.RemoveAll(lockDir)
 
 	t.Log("Step 1: Compiling the binary...")
 	if err := os.MkdirAll(buildDir, 0755); err != nil {
@@ -151,10 +151,10 @@ func TestCacheIntegrationConcurrentProcesses(t *testing.T) {
 	}
 	t.Log("✓ Binary compiled successfully")
 
-	t.Log("Step 2: Clearing the cache and dedupe lock directory...")
+	t.Log("Step 2: Clearing the cache and lock directory...")
 	// Clean up directories
 	os.RemoveAll(cacheDir)
-	os.RemoveAll(dedupeLockDir)
+	os.RemoveAll(lockDir)
 
 	clearCmd := exec.Command(binaryPath, "clear", "-backend=disk", "-cache-dir="+cacheDir)
 	clearCmd.Dir = workspaceDir
@@ -186,14 +186,14 @@ func TestCacheIntegrationConcurrentProcesses(t *testing.T) {
 
 			cmd := exec.Command("go", "test", "-v", testsDir)
 			cmd.Dir = workspaceDir
-			// Use fslock dedupe for cross-process deduplication
+			// Use fslock for cross-process deduplication
 			cmd.Env = append(os.Environ(),
 				"GOCACHEPROG="+binaryPath,
 				"BACKEND_TYPE=disk",
 				"DEBUG=false",
 				"PRINT_STATS=true",
-				"DEDUPE_TYPE=fslock",
-				"DEDUPE_LOCK_DIR="+dedupeLockDir,
+				"LOCK_TYPE=fslock",
+				"LOCK_DIR="+lockDir,
 				"CACHE_DIR="+cacheDir)
 
 			cmd.Stdout = &outputs[index]
@@ -234,8 +234,8 @@ func TestCacheIntegrationConcurrentProcesses(t *testing.T) {
 		"BACKEND_TYPE=disk",
 		"DEBUG=false",
 		"PRINT_STATS=true",
-		"DEDUPE_TYPE=fslock",
-		"DEDUPE_LOCK_DIR="+dedupeLockDir,
+		"LOCK=fslock",
+		"LOCK_DIR="+lockDir,
 		"CACHE_DIR="+cacheDir)
 	secondCmd.Stdout = &secondBatchOutput
 	secondCmd.Stderr = &secondBatchOutput

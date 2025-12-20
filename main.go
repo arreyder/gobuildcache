@@ -8,21 +8,21 @@ import (
 	"strings"
 
 	"github.com/richardartoul/gobuildcache/backends"
-	"github.com/richardartoul/gobuildcache/dedupe"
+	"github.com/richardartoul/gobuildcache/locking"
 )
 
 // Global flags
 var (
-	debug         bool
-	printStats    bool
-	backendType   string
-	dedupeType    string
-	dedupeLockDir string
-	cacheDir      string
-	s3Bucket      string
-	s3Prefix      string
-	s3TmpDir      string
-	errorRate     float64
+	debug       bool
+	printStats  bool
+	backendType string
+	lockingType string
+	lockDir     string
+	cacheDir    string
+	s3Bucket    string
+	s3Prefix    string
+	s3TmpDir    string
+	errorRate   float64
 )
 
 func main() {
@@ -55,8 +55,8 @@ func runServerCommand() {
 	debugDefault := getEnvBool("DEBUG", false)
 	printStatsDefault := getEnvBool("PRINT_STATS", true)
 	backendDefault := getEnv("BACKEND_TYPE", getEnv("BACKEND", "disk"))
-	dedupeDefault := getEnv("DEDUPE_TYPE", "memory")
-	dedupeLockDirDefault := getEnv("DEDUPE_LOCK_DIR", "")
+	lockTypeDefault := getEnv("LOCK_TYPE", "memory")
+	lockDirDefault := getEnv("LOCK_DIR", "")
 	cacheDirDefault := getEnv("CACHE_DIR", filepath.Join(os.TempDir(), "gobuildcache"))
 	s3BucketDefault := getEnv("S3_BUCKET", "")
 	s3PrefixDefault := getEnv("S3_PREFIX", "")
@@ -66,8 +66,8 @@ func runServerCommand() {
 	serverFlags.BoolVar(&debug, "debug", debugDefault, "Enable debug logging to stderr (env: DEBUG)")
 	serverFlags.BoolVar(&printStats, "stats", printStatsDefault, "Print cache statistics on exit (env: PRINT_STATS)")
 	serverFlags.StringVar(&backendType, "backend", backendDefault, "Backend type: disk (local only), s3 (env: BACKEND_TYPE)")
-	serverFlags.StringVar(&dedupeType, "dedupe", dedupeDefault, "Deduplication type: memory (in-memory), fslock (filesystem) (env: DEDUPE_TYPE)")
-	serverFlags.StringVar(&dedupeLockDir, "dedupe-lock-dir", dedupeLockDirDefault, "Lock directory for fslock dedupe (env: DEDUPE_LOCK_DIR)")
+	serverFlags.StringVar(&lockingType, "lock-type", lockTypeDefault, "Locking type: memory (in-memory), fslock (filesystem) (env: LOCK_TYPE)")
+	serverFlags.StringVar(&lockDir, "lock-dir", lockDirDefault, "Lock directory for fslock (env: LOCK_DIR)")
 	serverFlags.StringVar(&cacheDir, "cache-dir", cacheDirDefault, "Local cache directory (env: CACHE_DIR)")
 	serverFlags.StringVar(&s3Bucket, "s3-bucket", s3BucketDefault, "S3 bucket name (required for s3 backend) (env: S3_BUCKET)")
 	serverFlags.StringVar(&s3Prefix, "s3-prefix", s3PrefixDefault, "S3 key prefix (optional) (env: S3_PREFIX)")
@@ -83,8 +83,8 @@ func runServerCommand() {
 		fmt.Fprintf(os.Stderr, "  DEBUG            Enable debug logging (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  PRINT_STATS      Print cache statistics on exit (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  BACKEND_TYPE     Backend type (disk, s3)\n")
-		fmt.Fprintf(os.Stderr, "  DEDUPE_TYPE      Deduplication type (memory, fslock)\n")
-		fmt.Fprintf(os.Stderr, "  DEDUPE_LOCK_DIR  Lock directory for fslock dedupe\n")
+		fmt.Fprintf(os.Stderr, "  LOCK_TYPE      Deduplication type (memory, fslock)\n")
+		fmt.Fprintf(os.Stderr, "  LOCK_DIR  Lock directory for fslock\n")
 		fmt.Fprintf(os.Stderr, "  CACHE_DIR        Local cache directory\n")
 		fmt.Fprintf(os.Stderr, "  S3_BUCKET        S3 bucket name\n")
 		fmt.Fprintf(os.Stderr, "  S3_PREFIX        S3 key prefix\n")
@@ -172,15 +172,13 @@ func runServer() {
 	}
 	defer backend.Close()
 
-	// Create deduplication group
-	dedupeGroup, err := createDedupeGroup()
+	lockingGroup, err := createLockingGroup()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating dedupe group: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error creating lock group: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Create and run cache program
-	prog, err := NewCacheProg(backend, dedupeGroup, cacheDir, debug, printStats)
+	prog, err := NewCacheProg(backend, lockingGroup, cacheDir, debug, printStats)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating cache program: %v\n", err)
 		os.Exit(1)
@@ -271,17 +269,17 @@ func createBackend() (backends.Backend, error) {
 	return backend, nil
 }
 
-func createDedupeGroup() (dedupe.Locker, error) {
-	dedupeType = strings.ToLower(dedupeType)
+func createLockingGroup() (locking.Locker, error) {
+	lockingType = strings.ToLower(lockingType)
 
-	switch dedupeType {
+	switch lockingType {
 	case "memory", "":
 		// Default: in-memory singleflight
-		return dedupe.NewMemLock(), nil
+		return locking.NewMemLock(), nil
 
 	case "fslock", "fs":
 		// Filesystem-backed deduplication
-		group, err := dedupe.NewFlockGroup(dedupeLockDir)
+		group, err := locking.NewFlockGroup(lockDir)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create fslock group: %w", err)
 		}
@@ -289,10 +287,10 @@ func createDedupeGroup() (dedupe.Locker, error) {
 
 	case "noop":
 		// No deduplication (useful for testing)
-		return dedupe.NewNoOpGroup(), nil
+		return locking.NewNoOpGroup(), nil
 
 	default:
-		return nil, fmt.Errorf("unknown dedupe type: %s (supported: memory, fslock, noop)", dedupeType)
+		return nil, fmt.Errorf("unknown locking type: %s (supported: memory, fslock, noop)", lockingType)
 	}
 }
 

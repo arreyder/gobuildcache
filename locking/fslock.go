@@ -1,4 +1,4 @@
-package dedupe
+package locking
 
 import (
 	"context"
@@ -23,10 +23,10 @@ type FSLockGroup struct {
 
 // NewFlockGroup creates a new FlockGroup.
 // lockDir is the directory where lock files will be created.
-// If lockDir is empty, it defaults to os.TempDir()/gobuildcache-dedupe-locks.
+// If lockDir is empty, it defaults to os.TempDir()/gobuildcache-locks.
 func NewFlockGroup(lockDir string) (*FSLockGroup, error) {
 	if lockDir == "" {
-		lockDir = filepath.Join(os.TempDir(), "gobuildcache-dedupe-locks")
+		lockDir = filepath.Join(os.TempDir(), "gobuildcache-locks")
 	}
 
 	// Ensure lock directory exists

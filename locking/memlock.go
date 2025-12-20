@@ -1,4 +1,4 @@
-package dedupe
+package locking
 
 import "sync"
 
@@ -8,7 +8,9 @@ type MemLock struct {
 }
 
 func NewMemLock() *MemLock {
-	return &MemLock{}
+	return &MemLock{
+		locks: make(map[string]*sync.Mutex),
+	}
 }
 
 func (s *MemLock) DoWithLock(key string, fn func() (interface{}, error)) (v interface{}, err error) {

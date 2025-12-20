@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/richardartoul/gobuildcache/backends"
-	"github.com/richardartoul/gobuildcache/dedupe"
+	"github.com/richardartoul/gobuildcache/locking"
 )
 
 // Cmd represents a cache command type.
@@ -75,7 +75,7 @@ type CacheProg struct {
 	// filesystem itself to do the locking so it works even if there are
 	// multiple instances of the cache program running concurrently using
 	// the same cache directory.
-	locker dedupe.Locker
+	locker locking.Locker
 
 	// Stats.
 	seenActionIDs struct {
@@ -99,7 +99,7 @@ type CacheProg struct {
 // cacheDir is the local directory where cached files are stored for Go build tools to access.
 func NewCacheProg(
 	backend backends.Backend,
-	sfGroup dedupe.Locker,
+	sfGroup locking.Locker,
 	cacheDir string,
 	debug bool,
 	printStats bool,

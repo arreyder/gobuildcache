@@ -1,4 +1,4 @@
-package dedupe
+package locking
 
 // NoOpGroup is a Group implementation that performs no deduplication.
 // Every call executes the function immediately. This is useful for testing
