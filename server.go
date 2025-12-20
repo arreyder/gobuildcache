@@ -79,6 +79,8 @@ type CacheProg struct {
 	putCount         atomic.Int64
 	getCount         atomic.Int64
 	hitCount         atomic.Int64
+	localCacheHits   atomic.Int64
+	backendCacheHits atomic.Int64
 	deduplicatedGets atomic.Int64
 	deduplicatedPuts atomic.Int64
 	retriedRequests  atomic.Int64
@@ -236,11 +238,12 @@ func (cp *CacheProg) trackActionID(actionID []byte) bool {
 
 // getResult holds the result of a Get operation for singleflight
 type getResult struct {
-	outputID []byte
-	diskPath string
-	size     int64
-	putTime  *time.Time
-	miss     bool
+	outputID       []byte
+	diskPath       string
+	size           int64
+	putTime        *time.Time
+	miss           bool
+	fromLocalCache bool // true if hit was from local cache, false if from backend
 }
 
 // putResult holds the result of a Put operation for singleflight
@@ -364,11 +367,12 @@ func (cp *CacheProg) handleGet(req *Request) (Response, error) {
 			diskPath := cp.localCache.getPath(req.ActionID)
 
 			return &getResult{
-				outputID: meta.OutputID,
-				diskPath: diskPath,
-				size:     meta.Size,
-				putTime:  &meta.PutTime,
-				miss:     false,
+				outputID:       meta.OutputID,
+				diskPath:       diskPath,
+				size:           meta.Size,
+				putTime:        &meta.PutTime,
+				miss:           false,
+				fromLocalCache: true,
 			}, nil
 		}
 
@@ -403,11 +407,12 @@ func (cp *CacheProg) handleGet(req *Request) (Response, error) {
 		}
 
 		return &getResult{
-			outputID: outputID,
-			diskPath: diskPath,
-			size:     size,
-			putTime:  putTime,
-			miss:     false,
+			outputID:       outputID,
+			diskPath:       diskPath,
+			size:           size,
+			putTime:        putTime,
+			miss:           false,
+			fromLocalCache: false,
 		}, nil
 	})
 
@@ -428,6 +433,11 @@ func (cp *CacheProg) handleGet(req *Request) (Response, error) {
 	resp.Miss = result.miss
 	if !result.miss {
 		cp.hitCount.Add(1)
+		if result.fromLocalCache {
+			cp.localCacheHits.Add(1)
+		} else {
+			cp.backendCacheHits.Add(1)
+		}
 		resp.OutputID = result.outputID
 		resp.DiskPath = result.diskPath
 		resp.Size = result.size
@@ -597,6 +607,8 @@ func (cp *CacheProg) Run() error {
 	if cp.printStats {
 		getCount := cp.getCount.Load()
 		hitCount := cp.hitCount.Load()
+		localCacheHits := cp.localCacheHits.Load()
+		backendCacheHits := cp.backendCacheHits.Load()
 		putCount := cp.putCount.Load()
 		duplicateGets := cp.duplicateGets.Load()
 		duplicatePuts := cp.duplicatePuts.Load()
@@ -606,8 +618,12 @@ func (cp *CacheProg) Run() error {
 		totalRetries := cp.totalRetries.Load()
 		missCount := getCount - hitCount
 		hitRate := 0.0
+		localHitRate := 0.0
+		backendHitRate := 0.0
 		if getCount > 0 {
 			hitRate = float64(hitCount) / float64(getCount) * 100
+			localHitRate = float64(localCacheHits) / float64(getCount) * 100
+			backendHitRate = float64(backendCacheHits) / float64(getCount) * 100
 		}
 
 		cp.seenActionIDs.Lock()
@@ -619,6 +635,10 @@ func (cp *CacheProg) Run() error {
 		fmt.Fprintf(os.Stderr, "Cache statistics:\n")
 		fmt.Fprintf(os.Stderr, "  GET operations: %d (hits: %d, misses: %d, hit rate: %.1f%%)\n",
 			getCount, hitCount, missCount, hitRate)
+		fmt.Fprintf(os.Stderr, "    Local cache hits: %d (%.1f%% of GETs)\n",
+			localCacheHits, localHitRate)
+		fmt.Fprintf(os.Stderr, "    Backend cache hits: %d (%.1f%% of GETs)\n",
+			backendCacheHits, backendHitRate)
 		fmt.Fprintf(os.Stderr, "    Duplicate GETs: %d (%.1f%% of GETs)\n",
 			duplicateGets, float64(duplicateGets)/float64(getCount)*100)
 		fmt.Fprintf(os.Stderr, "    Deduplicated GETs (singleflight): %d (%.1f%% of GETs)\n",

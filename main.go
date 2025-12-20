@@ -55,7 +55,7 @@ func runServerCommand() {
 	debugDefault := getEnvBool("DEBUG", false)
 	printStatsDefault := getEnvBool("PRINT_STATS", true)
 	backendDefault := getEnv("BACKEND_TYPE", getEnv("BACKEND", "disk"))
-	dedupeDefault := getEnv("DEDUPE_TYPE", "singleflight")
+	dedupeDefault := getEnv("DEDUPE_TYPE", "memory")
 	dedupeLockDirDefault := getEnv("DEDUPE_LOCK_DIR", "")
 	cacheDirDefault := getEnv("CACHE_DIR", filepath.Join(os.TempDir(), "gobuildcache"))
 	s3BucketDefault := getEnv("S3_BUCKET", "")
@@ -66,7 +66,7 @@ func runServerCommand() {
 	serverFlags.BoolVar(&debug, "debug", debugDefault, "Enable debug logging to stderr (env: DEBUG)")
 	serverFlags.BoolVar(&printStats, "stats", printStatsDefault, "Print cache statistics on exit (env: PRINT_STATS)")
 	serverFlags.StringVar(&backendType, "backend", backendDefault, "Backend type: disk (local only), s3 (env: BACKEND_TYPE)")
-	serverFlags.StringVar(&dedupeType, "dedupe", dedupeDefault, "Deduplication type: singleflight (in-memory), fslock (filesystem) (env: DEDUPE_TYPE)")
+	serverFlags.StringVar(&dedupeType, "dedupe", dedupeDefault, "Deduplication type: memory (in-memory), fslock (filesystem) (env: DEDUPE_TYPE)")
 	serverFlags.StringVar(&dedupeLockDir, "dedupe-lock-dir", dedupeLockDirDefault, "Lock directory for fslock dedupe (env: DEDUPE_LOCK_DIR)")
 	serverFlags.StringVar(&cacheDir, "cache-dir", cacheDirDefault, "Local cache directory (env: CACHE_DIR)")
 	serverFlags.StringVar(&s3Bucket, "s3-bucket", s3BucketDefault, "S3 bucket name (required for s3 backend) (env: S3_BUCKET)")
@@ -83,7 +83,7 @@ func runServerCommand() {
 		fmt.Fprintf(os.Stderr, "  DEBUG            Enable debug logging (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  PRINT_STATS      Print cache statistics on exit (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  BACKEND_TYPE     Backend type (disk, s3)\n")
-		fmt.Fprintf(os.Stderr, "  DEDUPE_TYPE      Deduplication type (singleflight, fslock)\n")
+		fmt.Fprintf(os.Stderr, "  DEDUPE_TYPE      Deduplication type (memory, fslock)\n")
 		fmt.Fprintf(os.Stderr, "  DEDUPE_LOCK_DIR  Lock directory for fslock dedupe\n")
 		fmt.Fprintf(os.Stderr, "  CACHE_DIR        Local cache directory\n")
 		fmt.Fprintf(os.Stderr, "  S3_BUCKET        S3 bucket name\n")
@@ -292,7 +292,7 @@ func createDedupeGroup() (dedupe.Group, error) {
 		return dedupe.NewNoOpGroup(), nil
 
 	default:
-		return nil, fmt.Errorf("unknown dedupe type: %s (supported: singleflight, fslock, noop)", dedupeType)
+		return nil, fmt.Errorf("unknown dedupe type: %s (supported: memory, fslock, noop)", dedupeType)
 	}
 }
 
