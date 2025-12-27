@@ -49,9 +49,7 @@ func newLocalCache(cacheDir string, logger *slog.Logger) (*localCache, error) {
 
 // actionIDToPath converts an actionID to a local cache file path.
 func (lc *localCache) actionIDToPath(actionID []byte) string {
-	// Bump this v2 string whenever making backwards incompatible changes to the
-	// cache format.
-	hexID := "v2" + hex.EncodeToString(actionID)
+	hexID := fileFormatVersion + hex.EncodeToString(actionID)
 	return filepath.Join(lc.cacheDir, hexID)
 }
 

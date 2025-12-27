@@ -21,6 +21,11 @@ import (
 	"github.com/richardartoul/gobuildcache/metrics"
 )
 
+const (
+	// Bump this string whenever you make backwards-incompatible changes to the file format.
+	fileFormatVersion = "v2"
+)
+
 // Cmd represents a cache command type.
 type Cmd string
 
@@ -259,6 +264,12 @@ func (cp *CacheProg) trackActionID(actionID []byte) bool {
 	return count > 0 // It's a duplicate if we've seen it before
 }
 
+// generateBackendKey generates the key to use for backend storage operations.
+// This allows for versioning, prefixing, or other key transformations.
+func (cp *CacheProg) generateBackendKey(actionID []byte) []byte {
+	return []byte(fileFormatVersion + hex.EncodeToString(actionID))
+}
+
 // compressData compresses data using LZ4 and returns the compressed bytes.
 func compressData(data []byte) ([]byte, error) {
 	var buf bytes.Buffer
@@ -434,7 +445,8 @@ func (cp *CacheProg) handlePut(req *Request) (Response, error) {
 			dataSize = req.BodySize
 		}
 
-		err = cp.backend.Put(req.ActionID, req.OutputID, bytes.NewReader(dataToStore), dataSize)
+		backendKey := cp.generateBackendKey(req.ActionID)
+		err = cp.backend.Put(backendKey, req.OutputID, bytes.NewReader(dataToStore), dataSize)
 		cp.latencyTracker.Record("put_backend", time.Since(backendPutStart))
 
 		if err != nil {
@@ -502,7 +514,8 @@ func (cp *CacheProg) handleGet(req *Request) (Response, error) {
 
 		// Local cache miss - get from backend
 		backendGetStart := time.Now()
-		outputID, body, size, putTime, miss, err := cp.backend.Get(req.ActionID)
+		backendKey := cp.generateBackendKey(req.ActionID)
+		outputID, body, size, putTime, miss, err := cp.backend.Get(backendKey)
 		cp.latencyTracker.Record("get_backend", time.Since(backendGetStart))
 
 		if err != nil {
