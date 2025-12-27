@@ -11,15 +11,6 @@ jobs:
   test:
     name: Run Tests
     runs-on: ubuntu-latest
-    env:
-      BACKEND_TYPE: s3
-      S3_BUCKET: test-go-build-cache
-      S3_PREFIX: test-go-build-cache-ci/
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_ENDPOINT_URL_S3: https://t3.storage.dev
-      AWS_ENDPOINT_URL_IAM: https://iam.storage.dev
-      AWS_REGION: auto
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -33,6 +24,14 @@ jobs:
         run: make build
       - name: Run short tests
         env:
+          BACKEND_TYPE: s3
+          S3_BUCKET: test-go-build-cache
+          S3_PREFIX: test-go-build-cache-ci/
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT_URL_S3: https://t3.storage.dev
+          AWS_ENDPOINT_URL_IAM: https://iam.storage.dev
+          AWS_REGION: auto
           GOCACHEPROG: ./builds/gobuildcache
           DEBUG: true
         run: make test
