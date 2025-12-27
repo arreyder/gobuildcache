@@ -5,6 +5,10 @@ TODO: Clear command
 TODO: Assumes ephemeral storage
 TODO: Link depot blog post
 TODO: Lifecycle policy
+TODO: Do we need to handle failed PUTs? I.E clean up if we fail to write and/or checksumming.
+TODO: Github actions example
+TODO: Actually use HandleRequestWithRetries instead of HandleRequest.
+TODO: Move async_backend.go to backends package
 
 `gobuildcache` implements the [gocacheprog](TODO: LINK) interface defined by the Go compiler over a variety of storage backends, the most important of which is S3 Express One Zone (henceforth referred to as S3OZ). Its primary purpose is to accelerate CI (both compilation and tests) for large Go repositories.
 
@@ -37,7 +41,7 @@ export BACKEND_TYPE=s3
 export S3_BUCKET=$BUCKET_NAME
 ```
 
-You'll also have to provide AWS credentials. `gobuildcaceh` embeds the AWS V2 S3 SDK so any method of providing credentials to that library will work, but the simplest is to us environment variables as demonstrated below.
+You'll also have to provide AWS credentials. `gobuildcache` embeds the AWS V2 S3 SDK so any method of providing credentials to that library will work, but the simplest is to us environment variables as demonstrated below.
 
 ```bash
 export GOCACHEPROG=gobuildcache
@@ -84,6 +88,34 @@ In normal circumstances you should never have to run the `gobuildcache` binary d
 
 `gobuildcache` ships with reasonable defaults, but this section provides a complete overview of flags / environment variables that can be used to override behavior.
 
+| Flag | Environment Variable | Default | Description |
+|------|---------------------|---------|-------------|
+| `-backend` | `BACKEND_TYPE` | `disk` | Backend type: `disk` or `s3` |
+| `-lock-type` | `LOCK_TYPE` | `fslock` | Mechanism for locking: `fslock` (filesystem) or `memory` |
+| `-cache-dir` | `CACHE_DIR` | `/$OS_TMP/gobuildcache/locks` | Local cache directory |
+| `-lock-dir` | `LOCK_DIR` | `/$OS_TMP/gobuildcache/cache` | Local directory for storing filesystem locks |
+| `-s3-bucket` | `S3_BUCKET` | (none) | S3 bucket name (required for S3) |
+| `-s3-prefix` | `S3_PREFIX` | (empty) | S3 key prefix |
+| `-debug` | `DEBUG` | `false` | Enable debug logging |
+| `-stats` | `PRINT_STATS` | `false` | Print cache statistics on exit |
+
+
+# How it Works
+
+`gobuildcache` runs a server that processes commands from the Go compiler over stdin and writes results over stdout. 
+
+## Processing `GET` commands
+
+When `gobuildcache` receives a `GET` command, it checks if the requested filed is already stored locally on disk. If file already exists locally, it returns the path of the cached file so that the Go compiler can use it immediately. If the file is not present locally, it consults the configured "backend" to see if the file is cached remotely. If it is, it loads the file from the remote backend, writes it to the local filesystem, and then returns the path of the cached file. If the file is not present in the remote backend, it returns a cache miss and the Go toolchain will compile the file or execute the test.
+
+## Processing `PUT` commands
+
+When `gobuildcache` receives a `PUT` command, it writes the provided file to its local on-disk cache. Separately, it schedules a background goroutine to write the file to the remote backend. It writes to the remote backend outside of the critical path to avoid the latency of S3OZ writes from blocking the Go toolchain from making fruther progress in the meantime.
+
+## Locking
+
+`gobuildcache` uses exclusive filesystem locks to fence `GET` and `PUT` operations for the same file such that only one operation can run concurrently for any given file (operations across different files can proceed concurrently). This ensures that the filesystem does not get corrupted by trying to write the same file path concurrently if concurrent PUTs are received for the same file, it also prevents `GET` operations from seeing torn/partial writes from failed or in-flight `PUT` operations. Finally, it deduplicates `GET` operations against the remote backend which saves resources, money, and bandwidth.
+
 # Why should I use gobuildcache?
 
 First, the local on-disk cache of the CI VM doesn't have to be pre-populated at once. `gobuildcache` populates it by loading the cache on the fly as the Go compiler compiles code and runs test. This makes it so you don't have to waste several precious minutes of CI time waiting for gigabytes of data to be downloaded and decompressed while CI cores sit idle. This is why S3OZ's low latency is crucial to `gobuildcache`'s design.
@@ -94,302 +126,6 @@ Third, the `gobuildcache` approach completely obviates the need to determine how
 
 Fourth, `gobuildcache` makes parallelizing CI using commonly supported "matrix" strategies much easier and efficient. For example, consider the common pattern where unit tests are split across 4 concurrent CI jobs using Github actions matrix functionality. In this approach, each CI job runs ~ 1/4th of the unit tests in the repostitory and each CI job determines which tests its responsible for running by hashing the unit tests name and then moduloing it by the index assigned to the CI job by Github actions matrix functionality. This works great for parallelizing test execution across multiple VMs, but it presesents a huge problem for build caching. The Go build cache doesn't just cache package compilation, it also cache test execution. This is a hugely important optimization for CI because it means that if you can populate the the CI job's build cache efficiently, P.Rs that modify packages that not many other packages depend on will only have to run a small fraction of the total tests in the repository. However, generating this cache is difficult now because each CI job is only executing a fraction of the test suite, so the build cache generated by CI job 1 will result in 0 cache hits for job 2 and vice versa. As a result, CI job matrix unit now has to restore and save a build cache that is unique to its specific matrix index. This is doable, but it's annoying and requires solving a bunch of other incidental engineering challenges like making sure the cache is only ever saved from CI jobs running on the main branch, and using consistent hashing instead of modulo hashing to assign tests to CI job matrix units (because otherwise add a single test will completely shuffle the assignment of tests to CI jobs and the cache hit ratio will be terrible). All of these problems just dissapear when using the `gobuildcache` because the CI jobs behave much more like stateless, ephemeral compute while still benefitting from extremely high cache hit ratios due to the shared / distributed cache backend.
 
-## TODOs
-
-1. Actually use HandleRequestWithRetries instead of HandleRequest.
-2. Move async_backend.go to backends package
-
-## Features
-
-- **Multiple Storage Backends**: Choose between local disk storage or S3 cloud storage
-- **Go Build Cache Protocol**: Compatible with Go's remote cache protocol (`GOCACHEPROG`)
-- **Flexible Configuration**: Use command-line flags or environment variables (or both!)
-- **Debug Mode**: Optional debug logging for troubleshooting
-
-## Configuration
-
-All configuration options can be set via **command-line flags** or **environment variables**. Command-line flags take precedence over environment variables.
-
-### Available Options
-
-| Flag | Environment Variable | Default | Description |
-|------|---------------------|---------|-------------|
-| `-backend` | `BACKEND_TYPE` | `disk` | Backend type: `disk` or `s3` |
-| `-cache-dir` | `CACHE_DIR` | `/tmp/gobuildcache` | Cache directory for disk backend |
-| `-s3-bucket` | `S3_BUCKET` | (none) | S3 bucket name (required for S3) |
-| `-s3-prefix` | `S3_PREFIX` | (empty) | S3 key prefix |
-| `-debug` | `DEBUG` | `false` | Enable debug logging |
-| `-stats` | `PRINT_STATS` | `false` | Print cache statistics on exit |
-
-## Storage Backends
-
-### Disk Backend (Default)
-
-Stores cache files on the local filesystem.
-
-**Using Flags:**
-```bash
-gobuildcache -cache-dir=/path/to/cache
-```
-
-**Using Environment Variables:**
-```bash
-export CACHE_DIR=/path/to/cache
-gobuildcache
-```
-
-**Mixed (flags override env vars):**
-```bash
-export CACHE_DIR=/default/path
-gobuildcache -cache-dir=/override/path -debug
-```
-
-### S3 Backend
-
-Stores cache files in Amazon S3 (or S3-compatible storage).
-
-**Using Flags:**
-```bash
-gobuildcache -backend=s3 -s3-bucket=my-bucket
-```
-
-**Using Environment Variables:**
-```bash
-export BACKEND_TYPE=s3
-export S3_BUCKET=my-bucket
-export S3_PREFIX=cache/
-gobuildcache
-```
-
-**Mixed (flags override env vars):**
-```bash
-export BACKEND_TYPE=s3
-export S3_BUCKET=default-bucket
-gobuildcache -s3-bucket=override-bucket -debug
-```
-
-**AWS Credentials:**
-AWS credentials are always configured via standard AWS environment variables or `~/.aws/credentials`:
-```bash
-export AWS_REGION=us-east-1
-export AWS_ACCESS_KEY_ID=your_access_key
-export AWS_SECRET_ACCESS_KEY=your_secret_key
-# Or use AWS profiles:
-export AWS_PROFILE=your-profile
-```
-
-**How S3 Backend Works:**
-1. Cache objects are stored in S3 with metadata (outputID, size, timestamp)
-2. On cache hits, files are downloaded to a local temp directory for Go to access
-3. The local temp directory acts as a secondary cache to avoid repeated S3 downloads
-4. The `diskPath` returned to Go points to the locally cached file
-
-## Usage
-
-### Getting Help
-
-View available commands and flags:
-```bash
-gobuildcache help
-gobuildcache -h
-gobuildcache clear -h
-```
-
-### Running the Server
-
-Start the cache server:
-```bash
-# With disk backend (default)
-gobuildcache
-
-# With custom cache directory
-gobuildcache -cache-dir=/var/cache/go
-
-# With S3 backend
-gobuildcache -backend=s3 -s3-bucket=my-cache-bucket
-
-# With debug logging
-gobuildcache -debug
-
-# With statistics (prints stats on exit)
-gobuildcache -stats
-
-# Both debug and statistics
-gobuildcache -debug -stats
-```
-
-The server will:
-1. Read from stdin (Go sends cache requests)
-2. Write responses to stdout
-3. Log debug information to stderr (if `-debug` flag is set)
-4. Print cache statistics to stderr on exit (if `-stats` flag is set)
-
-### Configuring Go to Use the Cache
-
-Set the `GOCACHEPROG` environment variable to point to the cache server:
-
-```bash
-export GOCACHEPROG=/path/to/gobuildcache/builds/gobuildcache
-go build ./...
-```
-
-### Clearing the Cache
-
-Clear all cache entries:
-```bash
-# Clear disk cache
-gobuildcache clear -cache-dir=/var/cache/go
-
-# Clear S3 cache
-gobuildcache clear -backend=s3 -s3-bucket=my-cache-bucket
-
-# Clear with debug logging
-gobuildcache clear -debug
-```
-
-The clear command uses the same backend flags as the server command.
-
-## Building
-
-Build the cache server:
-```bash
-make build
-```
-
-Or manually:
-```bash
-go build -o builds/gobuildcache
-```
-
-## Testing
-
-Run all tests:
-```bash
-go test ./...
-```
-
-Run with race detector:
-```bash
-go test -race ./...
-```
-
-### S3 Integration Tests
-
-To run S3 integration tests, set AWS credentials and bucket name as environment variables:
-
-```bash
-# Set credentials
-export AWS_ACCESS_KEY_ID=your_access_key
-export AWS_SECRET_ACCESS_KEY=your_secret_key
-export AWS_REGION=us-east-1
-export TEST_S3_BUCKET=your-bucket-name
-
-# Run S3 integration tests
-go test -v -run TestCacheIntegrationS3 -timeout 5m
-
-# Or in one line
-AWS_ACCESS_KEY_ID=xxx AWS_SECRET_ACCESS_KEY=yyy AWS_REGION=us-east-1 TEST_S3_BUCKET=my-bucket go test -v -run TestCacheIntegrationS3 -timeout 5m
-```
-
-**Note:** S3 tests will fail if credentials or bucket name are not set. To skip S3 tests, use the `-short` flag:
-
-```bash
-go test -short ./...  # Skips S3 tests
-```
-
-See [TESTING.md](TESTING.md) for detailed testing documentation.
-
-## Architecture
-
-### CacheBackend Interface
-
-All backends implement the `CacheBackend` interface:
-
-```go
-type CacheBackend interface {
-    // Put stores an object in the cache
-    Put(actionID, outputID []byte, body io.Reader, bodySize int64) (diskPath string, err error)
-    
-    // Get retrieves an object from the cache
-    Get(actionID []byte) (outputID []byte, diskPath string, size int64, putTime *time.Time, miss bool, err error)
-    
-    // Close performs cleanup operations
-    Close() error
-    
-    // Clear removes all cache entries
-    Clear() error
-}
-```
-
-### Available Backends
-
-- **DiskBackend** (`disk_backend.go`): Local filesystem storage
-- **S3Backend** (`s3_backend.go`): AWS S3 storage with local caching
-
-## AWS Configuration
-
-The S3 backend uses the AWS SDK for Go v2 and supports all standard AWS credential sources:
-
-1. **Environment Variables**: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`
-2. **Shared Credentials File**: `~/.aws/credentials`
-3. **IAM Roles**: For EC2 instances, ECS tasks, Lambda functions
-4. **SSO**: AWS IAM Identity Center (formerly AWS SSO)
-
-### Required IAM Permissions
-
-The IAM user/role needs the following S3 permissions:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "s3:GetObject",
-        "s3:PutObject",
-        "s3:DeleteObject",
-        "s3:ListBucket",
-        "s3:HeadBucket",
-        "s3:HeadObject"
-      ],
-      "Resource": [
-        "arn:aws:s3:::your-bucket-name",
-        "arn:aws:s3:::your-bucket-name/*"
-      ]
-    }
-  ]
-}
-```
-
-## Examples
-
-### Local Development with Disk Backend
-
-```bash
-# Using flags
-gobuildcache -debug -cache-dir=/tmp/my-go-cache
-
-# Or using environment variables
-export DEBUG=true
-export CACHE_DIR=/tmp/my-go-cache
-gobuildcache
-```
-
-### Team Build Cache with S3
-
-```bash
-# Option 1: Using environment variables (easier for team consistency)
-export BACKEND_TYPE=s3
-export S3_BUCKET=team-build-cache
-export S3_PREFIX=go/
-export AWS_REGION=us-east-1
-export GOCACHEPROG=/usr/local/bin/gobuildcache
-go build ./...
-
-# Option 2: Using flags
-gobuildcache -backend=s3 -s3-bucket=team-build-cache -s3-prefix=go/
-```
 
 ### CI/CD Pipeline with S3
 
@@ -401,7 +137,7 @@ env:
   S3_BUCKET: ci-build-cache
   S3_PREFIX: ${{ github.repository }}/
   AWS_REGION: us-east-1
-  GOCACHEPROG: ./gobuildcache
+  GOCACHEPROG: gobuildcache
 
 steps:
   - name: Download cache server
@@ -418,71 +154,3 @@ steps:
   - name: Build with remote cache
     run: go build ./...
 ```
-
-**Alternative using flags:**
-```yaml
-steps:
-  # ... (download and AWS setup same as above)
-  
-  - name: Start cache server
-    run: |
-      ./gobuildcache -backend=s3 \
-        -s3-bucket=ci-build-cache \
-        -s3-prefix=${{ github.repository }}/ &
-  
-  - name: Build with remote cache
-    run: go build ./...
-```
-
-## Troubleshooting
-
-### Enable Debug Logging
-
-Using flags:
-```bash
-gobuildcache -debug
-```
-
-Using environment variable:
-```bash
-export DEBUG=true
-gobuildcache
-```
-
-### Check S3 Connectivity
-
-Using flags:
-```bash
-gobuildcache clear -backend=s3 -s3-bucket=your-bucket -debug
-```
-
-Using environment variables:
-```bash
-export BACKEND_TYPE=s3
-export S3_BUCKET=your-bucket
-export DEBUG=true
-gobuildcache clear
-```
-
-### Verify Cache is Being Used
-
-Look for cache hits in your Go build output:
-```bash
-go build -x ./...  # Shows detailed build steps including cache usage
-```
-
-## Performance Considerations
-
-### Disk Backend
-- **Pros**: Very fast, no network latency
-- **Cons**: Not shared across machines, limited by disk space
-
-### S3 Backend
-- **Pros**: Shared across team/CI, scalable, durable
-- **Cons**: Network latency for downloads, S3 API costs
-- **Optimization**: Local temp cache reduces repeated S3 downloads
-
-## License
-
-MIT License (or your chosen license)
-
