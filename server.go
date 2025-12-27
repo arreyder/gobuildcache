@@ -712,15 +712,15 @@ func (cp *CacheProg) Run() error {
 			duplicateGets, float64(duplicateGets)/float64(getCount)*100)
 		fmt.Fprintf(os.Stderr, "    Deduplicated GETs (singleflight): %d (%.1f%% of GETs)\n",
 			deduplicatedGets, float64(deduplicatedGets)/float64(getCount)*100)
+		fmt.Fprintf(os.Stderr, "    Backend bytes read: %s\n", formatBytes(backendBytesRead))
 		fmt.Fprintf(os.Stderr, "  PUT operations: %d\n", putCount)
 		fmt.Fprintf(os.Stderr, "    Duplicate PUTs: %d (%.1f%% of PUTs)\n",
 			duplicatePuts, float64(duplicatePuts)/float64(putCount)*100)
 		fmt.Fprintf(os.Stderr, "    Deduplicated PUTs (singleflight): %d (%.1f%% of PUTs)\n",
 			deduplicatedPuts, float64(deduplicatedPuts)/float64(putCount)*100)
+		fmt.Fprintf(os.Stderr, "    Backend bytes written: %s\n", formatBytes(backendBytesWritten))
 		fmt.Fprintf(os.Stderr, "  Total operations: %d\n", totalOps)
 		fmt.Fprintf(os.Stderr, "  Unique action IDs: %d\n", uniqueActionIDs)
-		fmt.Fprintf(os.Stderr, "  Backend bytes read: %s\n", formatBytes(backendBytesRead))
-		fmt.Fprintf(os.Stderr, "  Backend bytes written: %s\n", formatBytes(backendBytesWritten))
 		fmt.Fprintf(os.Stderr, "  Total backend bytes transferred: %s\n", formatBytes(backendBytesRead+backendBytesWritten))
 		if retriedRequests > 0 {
 			avgRetries := float64(totalRetries) / float64(retriedRequests)
