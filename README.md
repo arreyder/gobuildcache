@@ -107,13 +107,87 @@ In normal circumstances you should never have to run the `gobuildcache` binary d
 
 `gobuildcache` runs a server that processes commands from the Go compiler over stdin and writes results over stdout. Ultimately, `GET` and `PUT` commands are processed by remote backends like S3OZ, but first they're proxied through the local filesystem.
 
+## Architecture Overview
+
+```mermaid
+graph TB
+    GC[Go Compiler] -->|stdin/stdout| GBC[gobuildcache Server]
+    GBC -->| 1. acquires| Locks[Filesystem Locks]
+    GBC -->|2. reads/writes| LFS[Local Filesystem Cache]
+    GBC -->|3. GET/PUT| Backend{Backend Type}
+    Backend --> S3OZ[S3 Express One Zone]
+```
+
 ## Processing `GET` commands
 
 When `gobuildcache` receives a `GET` command, it checks if the requested filed is already stored locally on disk. If file already exists locally, it returns the path of the cached file so that the Go compiler can use it immediately. If the file is not present locally, it consults the configured "backend" to see if the file is cached remotely. If it is, it loads the file from the remote backend, writes it to the local filesystem, and then returns the path of the cached file. If the file is not present in the remote backend, it returns a cache miss and the Go toolchain will compile the file or execute the test.
 
+```mermaid
+sequenceDiagram
+    participant GC as Go Compiler
+    participant GBC as gobuildcache
+    participant Lock as File Lock
+    participant LFS as Local FS
+    participant S3 as S3 Backend
+
+    GC->>GBC: GET request for file
+    GBC->>Lock: Acquire exclusive lock
+    activate Lock
+    
+    GBC->>LFS: Check if file exists locally
+    alt File exists locally
+        LFS-->>GBC: File found
+        GBC-->>GC: Return file path (cache hit)
+    else File not local
+        GBC->>S3: Check remote backend
+        alt File exists remotely
+            S3-->>GBC: File data
+            GBC->>LFS: Write file to local cache
+            GBC-->>GC: Return file path (cache hit)
+        else File not in backend
+            S3-->>GBC: Not found
+            GBC-->>GC: Cache miss
+            Note over GC: Compile/test from scratch
+        end
+    end
+    
+    GBC->>Lock: Release lock
+    deactivate Lock
+```
+
 ## Processing `PUT` commands
 
 When `gobuildcache` receives a `PUT` command, it writes the provided file to its local on-disk cache. Separately, it schedules a background goroutine to write the file to the remote backend. It writes to the remote backend outside of the critical path to avoid the latency of S3OZ writes from blocking the Go toolchain from making fruther progress in the meantime.
+
+```mermaid
+sequenceDiagram
+    participant GC as Go Compiler
+    participant GBC as gobuildcache
+    participant Lock as File Lock
+    participant LFS as Local FS
+    participant BG as Background Goroutine
+    participant S3 as S3 Backend
+
+    GC->>GBC: PUT request with file data
+    GBC->>Lock: Acquire exclusive lock
+    activate Lock
+    
+    GBC->>LFS: Write file to local cache
+    LFS-->>GBC: Write complete
+    
+    GBC->>Lock: Release lock
+    deactivate Lock
+    
+    GBC-->>GC: Success (fast response)
+    Note over GC: Continues building immediately
+    
+    par Async background write
+        GBC->>BG: Schedule remote write
+        BG->>S3: PUT file to backend
+        S3-->>BG: Write complete
+        Note over BG: Write happens off critical path
+    end
+```
 
 ## Locking
 
