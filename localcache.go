@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -41,13 +42,32 @@ func newLocalCache(cacheDir string, logger *slog.Logger) (*localCache, error) {
 		return nil, fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	// Precreate all 256 subdirectories (00-ff) to avoid syscalls during writes
-	for i := 0; i < 256; i++ {
-		subdir := fmt.Sprintf("%02x", i)
-		subdirPath := filepath.Join(absCacheDir, subdir)
-		if err := os.MkdirAll(subdirPath, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create subdirectory %s: %w", subdir, err)
-		}
+	// Precreate all 256 subdirectories (00-ff) in parallel to avoid syscalls during writes.
+	var (
+		wg      sync.WaitGroup
+		errChan = make(chan error, 256)
+	)
+	for i := range 256 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			var (
+				subdir     = fmt.Sprintf("%02x", i)
+				subdirPath = filepath.Join(absCacheDir, subdir)
+			)
+			if err := os.MkdirAll(subdirPath, 0755); err != nil {
+				errChan <- fmt.Errorf("failed to create subdirectory %s: %w", subdir, err)
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errChan)
+
+	// Check if any errors occurred.
+	if err := <-errChan; err != nil {
+		return nil, err
 	}
 
 	return &localCache{
