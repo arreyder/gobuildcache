@@ -58,19 +58,20 @@ func main() {
 
 func runServerCommand() {
 	// Get defaults from environment variables.
+	// All variables support both GOBUILDCACHE_<KEY> and <KEY> forms, with prefixed taking precedence.
 	var (
 		serverFlags         = flag.NewFlagSet("server", flag.ExitOnError)
-		debugDefault        = getEnvBool("DEBUG", false)
-		printStatsDefault   = getEnvBool("PRINT_STATS", true)
-		backendDefault      = getEnv("BACKEND_TYPE", getEnv("BACKEND", "disk"))
-		lockTypeDefault     = getEnv("LOCK_TYPE", "fslock")
-		lockDirDefault      = getEnv("LOCK_DIR", filepath.Join(os.TempDir(), "gobuildcache", "locks"))
-		cacheDirDefault     = getEnv("CACHE_DIR", filepath.Join(os.TempDir(), "gobuildcache", "cache"))
-		s3BucketDefault     = getEnv("S3_BUCKET", "")
-		s3PrefixDefault     = getEnv("S3_PREFIX", "gobuildcache/")
-		errorRateDefault    = getEnvFloat("ERROR_RATE", 0.0)
-		compressionDefault  = getEnvBool("COMPRESSION", true)
-		asyncBackendDefault = getEnvBool("ASYNC_BACKEND", true)
+		debugDefault        = getEnvBoolWithPrefix("DEBUG", false)
+		printStatsDefault   = getEnvBoolWithPrefix("PRINT_STATS", true)
+		backendDefault      = getEnvWithPrefix("BACKEND_TYPE", getEnv("BACKEND", "disk"))
+		lockTypeDefault     = getEnvWithPrefix("LOCK_TYPE", "fslock")
+		lockDirDefault      = getEnvWithPrefix("LOCK_DIR", filepath.Join(os.TempDir(), "gobuildcache", "locks"))
+		cacheDirDefault     = getEnvWithPrefix("CACHE_DIR", filepath.Join(os.TempDir(), "gobuildcache", "cache"))
+		s3BucketDefault     = getEnvWithPrefix("S3_BUCKET", "")
+		s3PrefixDefault     = getEnvWithPrefix("S3_PREFIX", "gobuildcache/")
+		errorRateDefault    = getEnvFloatWithPrefix("ERROR_RATE", 0.0)
+		compressionDefault  = getEnvBoolWithPrefix("COMPRESSION", true)
+		asyncBackendDefault = getEnvBoolWithPrefix("ASYNC_BACKEND", true)
 	)
 	serverFlags.BoolVar(&debug, "debug", debugDefault, "Enable debug logging to stderr (env: DEBUG)")
 	serverFlags.BoolVar(&printStats, "stats", printStatsDefault, "Print cache statistics on exit (env: PRINT_STATS)")
@@ -90,6 +91,8 @@ func runServerCommand() {
 		fmt.Fprintf(os.Stderr, "Flags (can also be set via environment variables):\n")
 		serverFlags.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nEnvironment Variables:\n")
+		fmt.Fprintf(os.Stderr, "  All variables support both GOBUILDCACHE_<KEY> and <KEY> forms.\n")
+		fmt.Fprintf(os.Stderr, "  The prefixed version takes precedence if both are set.\n\n")
 		fmt.Fprintf(os.Stderr, "  DEBUG            Enable debug logging (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  PRINT_STATS      Print cache statistics on exit (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  BACKEND_TYPE     Backend type (disk, s3)\n")
@@ -106,10 +109,12 @@ func runServerCommand() {
 		fmt.Fprintf(os.Stderr, "  %s -cache-dir=/var/cache/go\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  # Run with S3 backend using flags:\n")
 		fmt.Fprintf(os.Stderr, "  %s -backend=s3 -s3-bucket=my-cache-bucket\n\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  # Run with environment variables:\n")
+		fmt.Fprintf(os.Stderr, "  # Run with environment variables (prefixed form):\n")
+		fmt.Fprintf(os.Stderr, "  GOBUILDCACHE_BACKEND_TYPE=s3 GOBUILDCACHE_S3_BUCKET=my-cache-bucket %s\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  # Run with environment variables (unprefixed form, also supported):\n")
 		fmt.Fprintf(os.Stderr, "  BACKEND_TYPE=s3 S3_BUCKET=my-cache-bucket %s\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  # Mix environment variables and flags (flags override env):\n")
-		fmt.Fprintf(os.Stderr, "  BACKEND_TYPE=s3 %s -s3-bucket=my-cache-bucket -debug\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  GOBUILDCACHE_BACKEND_TYPE=s3 %s -s3-bucket=my-cache-bucket -debug\n", os.Args[0])
 	}
 
 	serverFlags.Parse(os.Args[1:])
@@ -118,13 +123,14 @@ func runServerCommand() {
 
 func runClearCommand() {
 	// Get defaults from environment variables.
+	// All variables support both GOBUILDCACHE_<KEY> and <KEY> forms, with prefixed taking precedence.
 	var (
 		clearFlags      = flag.NewFlagSet("clear", flag.ExitOnError)
-		debugDefault    = getEnvBool("DEBUG", false)
-		backendDefault  = getEnv("BACKEND_TYPE", getEnv("BACKEND", "disk"))
-		cacheDirDefault = getEnv("CACHE_DIR", filepath.Join(os.TempDir(), "gobuildcache", "cache"))
-		s3BucketDefault = getEnv("S3_BUCKET", "")
-		s3PrefixDefault = getEnv("S3_PREFIX", "")
+		debugDefault    = getEnvBoolWithPrefix("DEBUG", false)
+		backendDefault  = getEnvWithPrefix("BACKEND_TYPE", getEnv("BACKEND", "disk"))
+		cacheDirDefault = getEnvWithPrefix("CACHE_DIR", filepath.Join(os.TempDir(), "gobuildcache", "cache"))
+		s3BucketDefault = getEnvWithPrefix("S3_BUCKET", "")
+		s3PrefixDefault = getEnvWithPrefix("S3_PREFIX", "")
 	)
 	clearFlags.BoolVar(&debug, "debug", debugDefault, "Enable debug logging to stderr (env: DEBUG)")
 	clearFlags.StringVar(&backendType, "backend", backendDefault, "Backend type: disk (local only), s3 (env: BACKEND_TYPE)")
@@ -138,6 +144,8 @@ func runClearCommand() {
 		fmt.Fprintf(os.Stderr, "Flags (can also be set via environment variables):\n")
 		clearFlags.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nEnvironment Variables:\n")
+		fmt.Fprintf(os.Stderr, "  All variables support both GOBUILDCACHE_<KEY> and <KEY> forms.\n")
+		fmt.Fprintf(os.Stderr, "  The prefixed version takes precedence if both are set.\n\n")
 		fmt.Fprintf(os.Stderr, "  DEBUG          Enable debug logging (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  PRINT_STATS    Print cache statistics on exit (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  BACKEND_TYPE   Backend type (disk, s3)\n")
@@ -152,7 +160,7 @@ func runClearCommand() {
 		fmt.Fprintf(os.Stderr, "  # Clear S3 cache using flags:\n")
 		fmt.Fprintf(os.Stderr, "  %s clear -backend=s3 -s3-bucket=my-cache-bucket\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  # Clear using environment variables:\n")
-		fmt.Fprintf(os.Stderr, "  BACKEND_TYPE=s3 S3_BUCKET=my-cache-bucket %s clear\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  GOBUILDCACHE_BACKEND_TYPE=s3 GOBUILDCACHE_S3_BUCKET=my-cache-bucket %s clear\n", os.Args[0])
 	}
 
 	clearFlags.Parse(os.Args[2:])
@@ -160,11 +168,12 @@ func runClearCommand() {
 }
 
 func runClearLocalCommand() {
-	// Get defaults from environment variables
+	// Get defaults from environment variables.
+	// All variables support both GOBUILDCACHE_<KEY> and <KEY> forms, with prefixed taking precedence.
 	var (
 		clearLocalFlags = flag.NewFlagSet("clear-local", flag.ExitOnError)
-		debugDefault    = getEnvBool("DEBUG", false)
-		cacheDirDefault = getEnv("CACHE_DIR", filepath.Join(os.TempDir(), "gobuildcache", "cache"))
+		debugDefault    = getEnvBoolWithPrefix("DEBUG", false)
+		cacheDirDefault = getEnvWithPrefix("CACHE_DIR", filepath.Join(os.TempDir(), "gobuildcache", "cache"))
 	)
 	clearLocalFlags.BoolVar(&debug, "debug", debugDefault, "Enable debug logging to stderr (env: DEBUG)")
 	clearLocalFlags.StringVar(&cacheDir, "cache-dir", cacheDirDefault, "Local cache directory (env: CACHE_DIR)")
@@ -175,6 +184,8 @@ func runClearLocalCommand() {
 		fmt.Fprintf(os.Stderr, "Flags (can also be set via environment variables):\n")
 		clearLocalFlags.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nEnvironment Variables:\n")
+		fmt.Fprintf(os.Stderr, "  All variables support both GOBUILDCACHE_<KEY> and <KEY> forms.\n")
+		fmt.Fprintf(os.Stderr, "  The prefixed version takes precedence if both are set.\n\n")
 		fmt.Fprintf(os.Stderr, "  DEBUG          Enable debug logging (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  CACHE_DIR      Local cache directory\n")
 		fmt.Fprintf(os.Stderr, "\nNote: Command-line flags take precedence over environment variables.\n")
@@ -184,7 +195,7 @@ func runClearLocalCommand() {
 		fmt.Fprintf(os.Stderr, "  # Clear local cache using custom directory:\n")
 		fmt.Fprintf(os.Stderr, "  %s clear-local -cache-dir=/var/cache/go\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  # Clear using environment variables:\n")
-		fmt.Fprintf(os.Stderr, "  CACHE_DIR=/var/cache/go %s clear-local\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  GOBUILDCACHE_CACHE_DIR=/var/cache/go %s clear-local\n", os.Args[0])
 	}
 
 	clearLocalFlags.Parse(os.Args[2:])
@@ -200,12 +211,13 @@ func runClearLocalCommand() {
 
 func runClearRemoteCommand() {
 	// Get defaults from environment variables.
+	// All variables support both GOBUILDCACHE_<KEY> and <KEY> forms, with prefixed taking precedence.
 	var (
 		clearRemoteFlags = flag.NewFlagSet("clear-remote", flag.ExitOnError)
-		debugDefault     = getEnvBool("DEBUG", false)
-		backendDefault   = getEnv("BACKEND_TYPE", getEnv("BACKEND", "disk"))
-		s3BucketDefault  = getEnv("S3_BUCKET", "")
-		s3PrefixDefault  = getEnv("S3_PREFIX", "")
+		debugDefault     = getEnvBoolWithPrefix("DEBUG", false)
+		backendDefault   = getEnvWithPrefix("BACKEND_TYPE", getEnv("BACKEND", "disk"))
+		s3BucketDefault  = getEnvWithPrefix("S3_BUCKET", "")
+		s3PrefixDefault  = getEnvWithPrefix("S3_PREFIX", "")
 	)
 	clearRemoteFlags.BoolVar(&debug, "debug", debugDefault, "Enable debug logging to stderr (env: DEBUG)")
 	clearRemoteFlags.StringVar(&backendType, "backend", backendDefault, "Backend type: disk, s3 (env: BACKEND_TYPE)")
@@ -218,6 +230,8 @@ func runClearRemoteCommand() {
 		fmt.Fprintf(os.Stderr, "Flags (can also be set via environment variables):\n")
 		clearRemoteFlags.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nEnvironment Variables:\n")
+		fmt.Fprintf(os.Stderr, "  All variables support both GOBUILDCACHE_<KEY> and <KEY> forms.\n")
+		fmt.Fprintf(os.Stderr, "  The prefixed version takes precedence if both are set.\n\n")
 		fmt.Fprintf(os.Stderr, "  DEBUG          Enable debug logging (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  BACKEND_TYPE   Backend type (disk, s3)\n")
 		fmt.Fprintf(os.Stderr, "  S3_BUCKET      S3 bucket name\n")
@@ -229,7 +243,7 @@ func runClearRemoteCommand() {
 		fmt.Fprintf(os.Stderr, "  # Clear S3 cache with prefix:\n")
 		fmt.Fprintf(os.Stderr, "  %s clear-remote -backend=s3 -s3-bucket=my-cache-bucket -s3-prefix=myproject/\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  # Clear using environment variables:\n")
-		fmt.Fprintf(os.Stderr, "  BACKEND_TYPE=s3 S3_BUCKET=my-cache-bucket %s clear-remote\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  GOBUILDCACHE_BACKEND_TYPE=s3 GOBUILDCACHE_S3_BUCKET=my-cache-bucket %s clear-remote\n", os.Args[0])
 	}
 
 	clearRemoteFlags.Parse(os.Args[2:])
@@ -419,6 +433,18 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
+// getEnvWithPrefix gets an environment variable, checking for GOBUILDCACHE_ prefix first.
+// This allows users to use either GOBUILDCACHE_<KEY> or <KEY> for configuration.
+// The prefixed version takes precedence if set.
+func getEnvWithPrefix(key, defaultValue string) string {
+	// Check for GOBUILDCACHE_ prefixed version first
+	if value := os.Getenv("GOBUILDCACHE_" + key); value != "" {
+		return value
+	}
+	// Fall back to unprefixed version
+	return getEnv(key, defaultValue)
+}
+
 // getEnvBool gets a boolean environment variable or returns a default value.
 // Accepts: true, false, 1, 0, yes, no (case insensitive).
 func getEnvBool(key string, defaultValue bool) bool {
@@ -427,6 +453,23 @@ func getEnvBool(key string, defaultValue bool) bool {
 		return defaultValue
 	}
 	return value == "true" || value == "1" || value == "yes"
+}
+
+// getEnvBoolWithPrefix gets a boolean environment variable, checking for GOBUILDCACHE_ prefix first.
+// This allows users to use either GOBUILDCACHE_<KEY> or <KEY> for configuration.
+// The prefixed version takes precedence if set, but falls back to unprefixed if the prefixed value is invalid.
+func getEnvBoolWithPrefix(key string, defaultValue bool) bool {
+	prefixedKey := "GOBUILDCACHE_" + key
+	if value := strings.ToLower(os.Getenv(prefixedKey)); value != "" {
+		if value == "true" || value == "1" || value == "yes" {
+			return true
+		}
+		if value == "false" || value == "0" || value == "no" {
+			return false
+		}
+		// Invalid prefixed value, fall through to unprefixed
+	}
+	return getEnvBool(key, defaultValue)
 }
 
 // getEnvFloat gets a float64 environment variable or returns a default value.
@@ -440,4 +483,19 @@ func getEnvFloat(key string, defaultValue float64) float64 {
 		return defaultValue
 	}
 	return f
+}
+
+// getEnvFloatWithPrefix gets a float64 environment variable, checking for GOBUILDCACHE_ prefix first.
+// This allows users to use either GOBUILDCACHE_<KEY> or <KEY> for configuration.
+// The prefixed version takes precedence if set, but falls back to unprefixed if the prefixed value is invalid.
+func getEnvFloatWithPrefix(key string, defaultValue float64) float64 {
+	prefixedKey := "GOBUILDCACHE_" + key
+	if value := os.Getenv(prefixedKey); value != "" {
+		var f float64
+		if _, err := fmt.Sscanf(value, "%f", &f); err == nil {
+			return f
+		}
+		// Invalid prefixed value, fall through to unprefixed
+	}
+	return getEnvFloat(key, defaultValue)
 }

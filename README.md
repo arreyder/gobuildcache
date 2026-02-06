@@ -44,22 +44,24 @@ By default, `gobuildcache` uses an on-disk cache stored in the OS default tempor
 For "production" use-cases in CI, you'll want to configure `gobuildcache` to use S3 Express One Zone, or a similarly low latency distributed backend.
 
 ```bash
-export BACKEND_TYPE=s3
-export S3_BUCKET=$BUCKET_NAME
+export GOBUILDCACHE_BACKEND_TYPE=s3
+export GOBUILDCACHE_S3_BUCKET=$BUCKET_NAME
 ```
 
 You'll also have to provide AWS credentials. `gobuildcache` embeds the AWS V2 S3 SDK so any method of providing credentials to that library will work, but the simplest is to use environment variables as demonstrated below.
 
 ```bash
 export GOCACHEPROG=gobuildcache
-export BACKEND_TYPE=s3
-export S3_BUCKET=$BUCKET_NAME
+export GOBUILDCACHE_BACKEND_TYPE=s3
+export GOBUILDCACHE_S3_BUCKET=$BUCKET_NAME
 export AWS_REGION=$BUCKET_REGION
 export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY
 export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
 go build ./...
 go test ./...
 ```
+
+> **Note**: All configuration environment variables support both `GOBUILDCACHE_<KEY>` and `<KEY>` forms (e.g., both `GOBUILDCACHE_S3_BUCKET` and `S3_BUCKET` work). The prefixed version takes precedence if both are set. The prefixed form is recommended to avoid conflicts with other tools. If the prefixed variable is set to an empty string, it falls through to the unprefixed version (or default).
 
 Your credentials must have the following permissions:
 
@@ -145,16 +147,18 @@ The clear commands take the same flags / environment variables as the regular `g
 
 `gobuildcache` ships with reasonable defaults, but this section provides a complete overview of flags / environment variables that can be used to override behavior.
 
+All environment variables support both `GOBUILDCACHE_<KEY>` and `<KEY>` forms (e.g., `GOBUILDCACHE_S3_BUCKET` or `S3_BUCKET`). The prefixed version takes precedence if both are set.
+
 | Flag | Environment Variable | Default | Description |
-|------|---------------------|---------|-------------|
-| `-backend` | `BACKEND_TYPE` | `disk` | Backend type: `disk` or `s3` |
-| `-lock-type` | `LOCK_TYPE` | `fslock` | Mechanism for locking: `fslock` (filesystem) or `memory` |
-| `-cache-dir` | `CACHE_DIR` | `/$OS_TMP/gobuildcache/cache` | Local cache directory |
-| `-lock-dir` | `LOCK_DIR` | `/$OS_TMP/gobuildcache/locks` | Local directory for storing filesystem locks |
-| `-s3-bucket` | `S3_BUCKET` | (none) | S3 bucket name (required for S3) |
-| `-s3-prefix` | `S3_PREFIX` | (empty) | S3 key prefix |
-| `-debug` | `DEBUG` | `false` | Enable debug logging |
-| `-stats` | `PRINT_STATS` | `false` | Print cache statistics on exit |
+|------|----------------------|---------|-------------|
+| `-backend` | `GOBUILDCACHE_BACKEND_TYPE` | `disk` | Backend type: `disk` or `s3` |
+| `-lock-type` | `GOBUILDCACHE_LOCK_TYPE` | `fslock` | Locking: `fslock` or `memory` |
+| `-cache-dir` | `GOBUILDCACHE_CACHE_DIR` | `$TMPDIR/gobuildcache/cache` | Local cache directory |
+| `-lock-dir` | `GOBUILDCACHE_LOCK_DIR` | `$TMPDIR/gobuildcache/locks` | Filesystem lock directory |
+| `-s3-bucket` | `GOBUILDCACHE_S3_BUCKET` | (none) | S3 bucket name (required for S3) |
+| `-s3-prefix` | `GOBUILDCACHE_S3_PREFIX` | (empty) | S3 key prefix |
+| `-debug` | `GOBUILDCACHE_DEBUG` | `false` | Enable debug logging |
+| `-stats` | `GOBUILDCACHE_PRINT_STATS` | `false` | Print cache statistics on exit |
 
 
 # How it Works
