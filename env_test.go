@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os"
 	"testing"
 )
 
@@ -58,16 +57,26 @@ func TestGetEnvWithPrefix(t *testing.T) {
 			envVars:      map[string]string{"GOBUILDCACHE_BACKEND_TYPE": "s3"},
 			expected:     "s3",
 		},
+		{
+			name:         "empty prefixed value falls through to unprefixed",
+			key:          "TEST_KEY",
+			defaultValue: "default",
+			envVars: map[string]string{
+				"TEST_KEY":              "unprefixed_value",
+				"GOBUILDCACHE_TEST_KEY": "",
+			},
+			expected: "unprefixed_value",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clear and set environment variables
-			os.Unsetenv(tt.key)
-			os.Unsetenv("GOBUILDCACHE_" + tt.key)
+			// Clear environment variables (t.Setenv auto-restores on test completion)
+			t.Setenv(tt.key, "")
+			t.Setenv("GOBUILDCACHE_"+tt.key, "")
+			// Set test-specific environment variables
 			for k, v := range tt.envVars {
-				os.Setenv(k, v)
-				defer os.Unsetenv(k)
+				t.Setenv(k, v)
 			}
 
 			result := getEnvWithPrefix(tt.key, tt.defaultValue)
@@ -155,16 +164,26 @@ func TestGetEnvBoolWithPrefix(t *testing.T) {
 			envVars:      map[string]string{"GOBUILDCACHE_TEST_BOOL": "YES"},
 			expected:     true,
 		},
+		{
+			name:         "empty prefixed value falls through to unprefixed",
+			key:          "TEST_BOOL",
+			defaultValue: false,
+			envVars: map[string]string{
+				"TEST_BOOL":              "true",
+				"GOBUILDCACHE_TEST_BOOL": "",
+			},
+			expected: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clear and set environment variables
-			os.Unsetenv(tt.key)
-			os.Unsetenv("GOBUILDCACHE_" + tt.key)
+			// Clear environment variables (t.Setenv auto-restores on test completion)
+			t.Setenv(tt.key, "")
+			t.Setenv("GOBUILDCACHE_"+tt.key, "")
+			// Set test-specific environment variables
 			for k, v := range tt.envVars {
-				os.Setenv(k, v)
-				defer os.Unsetenv(k)
+				t.Setenv(k, v)
 			}
 
 			result := getEnvBoolWithPrefix(tt.key, tt.defaultValue)
@@ -219,21 +238,31 @@ func TestGetEnvFloatWithPrefix(t *testing.T) {
 			key:          "TEST_FLOAT",
 			defaultValue: 0.0,
 			envVars: map[string]string{
-				"TEST_FLOAT":             "0.5",
+				"TEST_FLOAT":              "0.5",
 				"GOBUILDCACHE_TEST_FLOAT": "not-a-number",
 			},
 			expected: 0.5,
+		},
+		{
+			name:         "empty prefixed value falls through to unprefixed",
+			key:          "TEST_FLOAT",
+			defaultValue: 0.0,
+			envVars: map[string]string{
+				"TEST_FLOAT":              "0.75",
+				"GOBUILDCACHE_TEST_FLOAT": "",
+			},
+			expected: 0.75,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clear and set environment variables
-			os.Unsetenv(tt.key)
-			os.Unsetenv("GOBUILDCACHE_" + tt.key)
+			// Clear environment variables (t.Setenv auto-restores on test completion)
+			t.Setenv(tt.key, "")
+			t.Setenv("GOBUILDCACHE_"+tt.key, "")
+			// Set test-specific environment variables
 			for k, v := range tt.envVars {
-				os.Setenv(k, v)
-				defer os.Unsetenv(k)
+				t.Setenv(k, v)
 			}
 
 			result := getEnvFloatWithPrefix(tt.key, tt.defaultValue)

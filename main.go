@@ -459,11 +459,10 @@ func getEnvBool(key string, defaultValue bool) bool {
 // This allows users to use either GOBUILDCACHE_<KEY> or <KEY> for configuration.
 // The prefixed version takes precedence if set.
 func getEnvBoolWithPrefix(key string, defaultValue bool) bool {
-	// Check for GOBUILDCACHE_ prefixed version first
-	if value := strings.ToLower(os.Getenv("GOBUILDCACHE_" + key)); value != "" {
-		return value == "true" || value == "1" || value == "yes"
+	prefixedKey := "GOBUILDCACHE_" + key
+	if os.Getenv(prefixedKey) != "" {
+		return getEnvBool(prefixedKey, defaultValue)
 	}
-	// Fall back to unprefixed version
 	return getEnvBool(key, defaultValue)
 }
 
@@ -482,15 +481,15 @@ func getEnvFloat(key string, defaultValue float64) float64 {
 
 // getEnvFloatWithPrefix gets a float64 environment variable, checking for GOBUILDCACHE_ prefix first.
 // This allows users to use either GOBUILDCACHE_<KEY> or <KEY> for configuration.
-// The prefixed version takes precedence if set.
+// The prefixed version takes precedence if set, but falls back to unprefixed if the prefixed value is invalid.
 func getEnvFloatWithPrefix(key string, defaultValue float64) float64 {
-	// Check for GOBUILDCACHE_ prefixed version first
-	if value := os.Getenv("GOBUILDCACHE_" + key); value != "" {
+	prefixedKey := "GOBUILDCACHE_" + key
+	if value := os.Getenv(prefixedKey); value != "" {
 		var f float64
 		if _, err := fmt.Sscanf(value, "%f", &f); err == nil {
 			return f
 		}
+		// Invalid prefixed value, fall through to unprefixed
 	}
-	// Fall back to unprefixed version
 	return getEnvFloat(key, defaultValue)
 }
