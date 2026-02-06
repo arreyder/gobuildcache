@@ -61,7 +61,7 @@ go build ./...
 go test ./...
 ```
 
-> **Note**: All configuration environment variables support both `GOBUILDCACHE_<KEY>` and `<KEY>` forms (e.g., both `GOBUILDCACHE_S3_BUCKET` and `S3_BUCKET` work). The prefixed version takes precedence if both are set. The prefixed form is recommended to avoid conflicts with other tools.
+> **Note**: All configuration environment variables support both `GOBUILDCACHE_<KEY>` and `<KEY>` forms (e.g., both `GOBUILDCACHE_S3_BUCKET` and `S3_BUCKET` work). The prefixed version takes precedence if both are set. The prefixed form is recommended to avoid conflicts with other tools. If the prefixed variable is set to an empty string, it falls through to the unprefixed version (or default).
 
 Your credentials must have the following permissions:
 

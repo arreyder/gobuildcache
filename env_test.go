@@ -174,6 +174,16 @@ func TestGetEnvBoolWithPrefix(t *testing.T) {
 			},
 			expected: true,
 		},
+		{
+			name:         "invalid prefixed value falls through to unprefixed",
+			key:          "TEST_BOOL",
+			defaultValue: false,
+			envVars: map[string]string{
+				"TEST_BOOL":              "true",
+				"GOBUILDCACHE_TEST_BOOL": "not-a-bool",
+			},
+			expected: true,
+		},
 	}
 
 	for _, tt := range tests {

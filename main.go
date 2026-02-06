@@ -457,11 +457,17 @@ func getEnvBool(key string, defaultValue bool) bool {
 
 // getEnvBoolWithPrefix gets a boolean environment variable, checking for GOBUILDCACHE_ prefix first.
 // This allows users to use either GOBUILDCACHE_<KEY> or <KEY> for configuration.
-// The prefixed version takes precedence if set.
+// The prefixed version takes precedence if set, but falls back to unprefixed if the prefixed value is invalid.
 func getEnvBoolWithPrefix(key string, defaultValue bool) bool {
 	prefixedKey := "GOBUILDCACHE_" + key
-	if os.Getenv(prefixedKey) != "" {
-		return getEnvBool(prefixedKey, defaultValue)
+	if value := strings.ToLower(os.Getenv(prefixedKey)); value != "" {
+		if value == "true" || value == "1" || value == "yes" {
+			return true
+		}
+		if value == "false" || value == "0" || value == "no" {
+			return false
+		}
+		// Invalid prefixed value, fall through to unprefixed
 	}
 	return getEnvBool(key, defaultValue)
 }
