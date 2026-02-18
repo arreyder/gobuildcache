@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/richardartoul/gobuildcache/pkg/backends"
 	"github.com/richardartoul/gobuildcache/pkg/locking"
@@ -26,8 +27,9 @@ var (
 	errorRate        float64
 	compression      bool
 	asyncBackend     bool
-	touchOnGet       bool
-	conditionalPut   bool
+	touchOnGet        bool
+	touchAgeThreshold time.Duration
+	conditionalPut    bool
 )
 
 func main() {
@@ -92,6 +94,7 @@ func runServerCommand() {
 	serverFlags.BoolVar(&compression, "compression", compressionDefault, "Enable LZ4 compression for backend storage (env: COMPRESSION)")
 	serverFlags.BoolVar(&asyncBackend, "async-backend", asyncBackendDefault, "Enable async backend writer for non-blocking PUT operations (env: ASYNC_BACKEND)")
 	serverFlags.BoolVar(&touchOnGet, "touch-on-get", touchOnGetDefault, "Touch S3 objects on GET to reset lifecycle expiry (env: TOUCH_ON_GET)")
+	serverFlags.DurationVar(&touchAgeThreshold, "touch-age-threshold", getEnvDurationWithPrefix("TOUCH_AGE_THRESHOLD", 0), "Only touch objects older than this duration, e.g. 84h (env: TOUCH_AGE_THRESHOLD)")
 	serverFlags.BoolVar(&conditionalPut, "conditional-put", conditionalPutDefault, "Skip backend PUT if object already exists (env: CONDITIONAL_PUT)")
 
 	serverFlags.Usage = func() {
@@ -113,6 +116,7 @@ func runServerCommand() {
 		fmt.Fprintf(os.Stderr, "  COMPRESSION      Enable LZ4 compression (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  ASYNC_BACKEND    Enable async backend writer (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  TOUCH_ON_GET     Touch S3 objects on GET to reset lifecycle expiry (true/false)\n")
+		fmt.Fprintf(os.Stderr, "  TOUCH_AGE_THRESHOLD Only touch objects older than this duration (e.g. 84h)\n")
 		fmt.Fprintf(os.Stderr, "  CONDITIONAL_PUT  Skip backend PUT if object already exists (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  STATS_MACHINE    Print one-line machine-readable stats on exit (true/false)\n")
 		fmt.Fprintf(os.Stderr, "\nNote: Command-line flags take precedence over environment variables.\n")
@@ -381,7 +385,7 @@ func createBackend() (backends.Backend, error) {
 			return nil, fmt.Errorf("S3 bucket is required for S3 backend (set via -s3-bucket flag or S3_BUCKET env var)")
 		}
 
-		backend, err = backends.NewS3(s3Bucket, s3Prefix)
+		backend, err = backends.NewS3(s3Bucket, s3Prefix, touchAgeThreshold)
 
 	default:
 		return nil, fmt.Errorf("unknown backend type: %s (supported: disk, s3)", backendType)
@@ -517,4 +521,16 @@ func getEnvFloatWithPrefix(key string, defaultValue float64) float64 {
 		// Invalid prefixed value, fall through to unprefixed
 	}
 	return getEnvFloat(key, defaultValue)
+}
+
+// getEnvDurationWithPrefix gets a time.Duration environment variable, checking for GOBUILDCACHE_ prefix first.
+func getEnvDurationWithPrefix(key string, defaultValue time.Duration) time.Duration {
+	for _, k := range []string{"GOBUILDCACHE_" + key, key} {
+		if value := os.Getenv(k); value != "" {
+			if d, err := time.ParseDuration(value); err == nil {
+				return d
+			}
+		}
+	}
+	return defaultValue
 }

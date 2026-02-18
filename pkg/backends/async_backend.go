@@ -2,6 +2,7 @@ package backends
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -21,10 +22,11 @@ type AsyncBackendWriter struct {
 	wg        sync.WaitGroup
 
 	// Stats
-	startedPuts  atomic.Int64
-	failedPuts   atomic.Int64
-	successPuts  atomic.Int64
-	totalPutTime atomic.Int64 // microseconds
+	startedPuts       atomic.Int64
+	failedPuts        atomic.Int64
+	successPuts       atomic.Int64
+	totalPutTime      atomic.Int64 // microseconds
+	touchSkippedFresh atomic.Int64 // Touches skipped because object was fresh
 }
 
 func NewAsyncBackendWriter(
@@ -116,9 +118,13 @@ func (abw *AsyncBackendWriter) Touch(actionID []byte) error {
 		defer func() { <-abw.semaphore }()
 
 		if err := abw.backend.Touch(id); err != nil {
-			abw.logger.Warn("async backend Touch failed",
-				"actionID", fmt.Sprintf("%x", id[:min(8, len(id))]),
-				"error", err)
+			if errors.Is(err, ErrTouchSkipped) {
+				abw.touchSkippedFresh.Add(1)
+			} else {
+				abw.logger.Warn("async backend Touch failed",
+					"actionID", fmt.Sprintf("%x", id[:min(8, len(id))]),
+					"error", err)
+			}
 		}
 	}()
 
@@ -160,6 +166,7 @@ func (abw *AsyncBackendWriter) Stats() AsyncBackendStats {
 		SuccessPuts:        abw.successPuts.Load(),
 		FailedPuts:         abw.failedPuts.Load(),
 		TotalPutTimeMicros: abw.totalPutTime.Load(),
+		TouchSkippedFresh:  abw.touchSkippedFresh.Load(),
 	}
 }
 
@@ -169,6 +176,7 @@ type AsyncBackendStats struct {
 	SuccessPuts        int64
 	FailedPuts         int64
 	TotalPutTimeMicros int64
+	TouchSkippedFresh  int64
 }
 
 func min(a, b int) int {

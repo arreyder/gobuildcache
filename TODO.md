@@ -10,11 +10,9 @@
 - [x] **Conditional PUT** (`-conditional-put`) — `HeadObject` check before
   uploading skips redundant PUTs when S3 already has the object. Saves
   bandwidth and S3 write costs on ephemeral CI agents where local cache is cold.
-
-## Planned
-
-- [ ] **Debounced touch with staleness threshold** — only touch if the object's
-  `LastModified` is older than half the lifecycle window, reducing unnecessary
-  S3 CopyObject calls when builds run frequently.
+- [x] **Debounced touch with staleness threshold** (`-touch-age-threshold`) —
+  when set (e.g. `84h`), Touch does a `HeadObject` first and skips the
+  `CopyObject` if the object was modified more recently than the threshold.
+  Reduces unnecessary S3 calls when builds run frequently.
 - [ ] **Lifecycle-aware metrics** — distinguish S3 misses (never existed) from
   entries that likely expired, to help tune lifecycle policy duration.

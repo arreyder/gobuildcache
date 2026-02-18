@@ -18,17 +18,20 @@ import (
 // S3 implements Backend using AWS S3.
 // This backend only handles S3 operations; local disk caching is handled by server.go.
 type S3 struct {
-	client    *s3.Client
-	bucket    string
-	prefix    string
-	ctx       context.Context
-	awsConfig aws.Config
+	client         *s3.Client
+	bucket         string
+	prefix         string
+	touchThreshold time.Duration // If >0, Touch skips CopyObject when object is newer than this
+	ctx            context.Context
+	awsConfig      aws.Config
 }
 
 // NewS3 creates a new S3-based cache backend.
 // bucket is the S3 bucket name where cache files will be stored.
 // prefix is an optional prefix for all S3 keys (e.g., "cache/" or "").
-func NewS3(bucket, prefix string) (*S3, error) {
+// touchThreshold controls debounced touch: if >0, Touch only issues a CopyObject
+// when the object's LastModified is older than this duration. Use 0 to always touch.
+func NewS3(bucket, prefix string, touchThreshold time.Duration) (*S3, error) {
 	ctx := context.Background()
 
 	// Load AWS config from environment/credentials
@@ -40,11 +43,12 @@ func NewS3(bucket, prefix string) (*S3, error) {
 	client := s3.NewFromConfig(cfg)
 
 	backend := &S3{
-		client:    client,
-		bucket:    bucket,
-		prefix:    prefix,
-		ctx:       ctx,
-		awsConfig: cfg,
+		client:         client,
+		bucket:         bucket,
+		prefix:         prefix,
+		touchThreshold: touchThreshold,
+		ctx:            ctx,
+		awsConfig:      cfg,
 	}
 
 	// Test bucket access
@@ -168,10 +172,34 @@ func (s *S3) Get(actionID []byte) ([]byte, io.ReadCloser, int64, *time.Time, boo
 
 // Touch performs a CopyObject self-to-self to reset the S3 object's LastModified timestamp,
 // preventing lifecycle policies from expiring frequently-accessed entries.
+//
+// When touchThreshold is configured, Touch first checks the object's LastModified via
+// HeadObject and skips the CopyObject if the object was modified more recently than the
+// threshold. Returns ErrTouchSkipped when the object is fresh enough.
 func (s *S3) Touch(actionID []byte) error {
 	key := s.actionIDToKey(actionID)
-	copySource := s.bucket + "/" + key
 
+	// If threshold is set, check whether the object is fresh enough to skip
+	if s.touchThreshold > 0 {
+		head, err := s.client.HeadObject(s.ctx, &s3.HeadObjectInput{
+			Bucket: aws.String(s.bucket),
+			Key:    aws.String(key),
+		})
+		if err != nil {
+			// If we can't check, fall through to touch anyway
+			if s.isNotFoundError(err) {
+				return nil // object gone, nothing to touch
+			}
+			// Transient error — proceed with touch as a safe default
+		} else if head.LastModified != nil {
+			age := time.Since(*head.LastModified)
+			if age < s.touchThreshold {
+				return ErrTouchSkipped
+			}
+		}
+	}
+
+	copySource := s.bucket + "/" + key
 	_, err := s.client.CopyObject(s.ctx, &s3.CopyObjectInput{
 		Bucket:            aws.String(s.bucket),
 		Key:               aws.String(key),

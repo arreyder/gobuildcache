@@ -1,9 +1,14 @@
 package backends
 
 import (
+	"errors"
 	"io"
 	"time"
 )
+
+// ErrTouchSkipped is returned by Touch when the object is fresh enough
+// that no CopyObject was needed (debounced touch).
+var ErrTouchSkipped = errors.New("touch skipped: object is fresh")
 
 // Backend defines the interface for cache storage backends.
 //
