@@ -33,6 +33,11 @@ type Backend interface {
 	// Close performs any cleanup operations needed by the backend.
 	Close() error
 
+	// Touch refreshes the backend storage timestamp for the given actionID,
+	// preventing lifecycle expiration policies from deleting frequently-accessed entries.
+	// Backends that don't support lifecycle policies can no-op this method.
+	Touch(actionID []byte) error
+
 	// Clear removes all entries from the cache backend storage.
 	Clear() error
 }

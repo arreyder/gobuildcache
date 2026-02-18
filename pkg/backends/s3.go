@@ -148,6 +148,25 @@ func (s *S3) Get(actionID []byte) ([]byte, io.ReadCloser, int64, *time.Time, boo
 	return outputID, result.Body, size, &putTime, false, nil
 }
 
+// Touch performs a CopyObject self-to-self to reset the S3 object's LastModified timestamp,
+// preventing lifecycle policies from expiring frequently-accessed entries.
+func (s *S3) Touch(actionID []byte) error {
+	key := s.actionIDToKey(actionID)
+	copySource := s.bucket + "/" + key
+
+	_, err := s.client.CopyObject(s.ctx, &s3.CopyObjectInput{
+		Bucket:            aws.String(s.bucket),
+		Key:               aws.String(key),
+		CopySource:        aws.String(copySource),
+		MetadataDirective: types.MetadataDirectiveCopy,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to touch S3 object: %w", err)
+	}
+
+	return nil
+}
+
 // Close performs cleanup operations.
 func (s *S3) Close() error {
 	return nil

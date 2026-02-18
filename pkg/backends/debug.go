@@ -63,6 +63,23 @@ func (d *Debug) Get(actionID []byte) ([]byte, io.ReadCloser, int64, *time.Time, 
 	return outputID, body, size, putTime, miss, err
 }
 
+// Touch refreshes the backend timestamp with debug logging.
+func (d *Debug) Touch(actionID []byte) error {
+	fmt.Fprintf(os.Stderr, "[DEBUG] Touch: actionID=%s\n", hex.EncodeToString(actionID))
+
+	start := time.Now()
+	err := d.backend.Touch(actionID)
+	duration := time.Since(start)
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG] Touch: ERROR: %v (duration: %v)\n", err, duration)
+	} else {
+		fmt.Fprintf(os.Stderr, "[DEBUG] Touch: success (duration: %v)\n", duration)
+	}
+
+	return err
+}
+
 // Close performs cleanup operations with debug logging.
 func (d *Debug) Close() error {
 	fmt.Fprintf(os.Stderr, "[DEBUG] Close: closing backend\n")

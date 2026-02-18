@@ -70,10 +70,11 @@ type CacheProg struct {
 		w *bufio.Writer
 	}
 
-	debug       bool
-	printStats  bool
-	compression bool
-	logger      *slog.Logger
+	debug            bool
+	printStats       bool
+	printStatsMachine bool
+	compression      bool
+	logger           *slog.Logger
 
 	// Latency tracking using DDSketch for quantile estimation.
 	latencyTracker *metrics.LatencyTracker
@@ -111,6 +112,24 @@ type CacheProg struct {
 	compressionBytesOut   atomic.Int64 // Compressed bytes after compression
 	decompressionBytesIn  atomic.Int64 // Compressed bytes before decompression
 	decompressionBytesOut atomic.Int64 // Uncompressed bytes after decompression
+
+	// Touch-on-GET state
+	touchOnGet bool
+	touched    struct {
+		sync.Mutex
+		keys map[string]struct{}
+	}
+	touchCount   atomic.Int64 // Touches dispatched
+	touchSkipped atomic.Int64 // Skipped (already touched this build)
+}
+
+// CacheProgOptions holds configuration for NewCacheProg.
+type CacheProgOptions struct {
+	Debug            bool
+	PrintStats       bool
+	PrintStatsMachine bool
+	Compression      bool
+	TouchOnGet       bool
 }
 
 // NewCacheProg creates a new cache program instance.
@@ -119,12 +138,10 @@ func NewCacheProg(
 	backend backends.Backend,
 	sfGroup locking.Group,
 	cacheDir string,
-	debug bool,
-	printStats bool,
-	compression bool,
+	opts CacheProgOptions,
 ) (*CacheProg, error) {
 	logLevel := slog.LevelInfo
-	if debug {
+	if opts.Debug {
 		logLevel = slog.LevelDebug
 	}
 
@@ -138,18 +155,21 @@ func NewCacheProg(
 	}
 
 	cp := &CacheProg{
-		backend:        backend,
-		localCache:     localCache,
-		reader:         bufio.NewReader(os.Stdin),
-		debug:          debug,
-		printStats:     printStats,
-		compression:    compression,
-		logger:         logger,
-		locker:         sfGroup,
-		latencyTracker: metrics.NewLatencyTracker(0.01), // 1% relative accuracy
+		backend:           backend,
+		localCache:        localCache,
+		reader:            bufio.NewReader(os.Stdin),
+		debug:             opts.Debug,
+		printStats:        opts.PrintStats,
+		printStatsMachine: opts.PrintStatsMachine,
+		compression:       opts.Compression,
+		touchOnGet:        opts.TouchOnGet,
+		logger:            logger,
+		locker:            sfGroup,
+		latencyTracker:    metrics.NewLatencyTracker(0.01), // 1% relative accuracy
 	}
 	cp.writer.w = bufio.NewWriter(os.Stdout)
 	cp.seenActionIDs.ids = make(map[string]int)
+	cp.touched.keys = make(map[string]struct{})
 	return cp, nil
 }
 
@@ -332,6 +352,14 @@ func (cp *CacheProg) Run() error {
 				totalRetries, avgRetries)
 		}
 
+		// Print touch statistics if touch-on-GET is enabled
+		if cp.touchOnGet {
+			touchCount := cp.touchCount.Load()
+			touchSkipped := cp.touchSkipped.Load()
+			fmt.Fprintf(os.Stderr, "  Touch-on-GET: %d dispatched, %d skipped (dedup)\n",
+				touchCount, touchSkipped)
+		}
+
 		// Print latency quantiles
 		fmt.Fprintf(os.Stderr, "\nLatency quantiles (ms):\n")
 		allStats := cp.latencyTracker.GetAllStats()
@@ -342,6 +370,28 @@ func (cp *CacheProg) Run() error {
 				fmt.Fprintf(os.Stderr, "%s\n", stat.String())
 			}
 		}
+	}
+
+	// Print machine-readable stats (single line, key=value pairs)
+	if cp.printStatsMachine {
+		var (
+			getCount            = cp.getCount.Load()
+			hitCount            = cp.hitCount.Load()
+			localCacheHits      = cp.localCacheHits.Load()
+			backendCacheHits    = cp.backendCacheHits.Load()
+			putCount            = cp.putCount.Load()
+			missCount           = getCount - hitCount
+			backendBytesRead    = cp.backendBytesRead.Load()
+			backendBytesWritten = cp.backendBytesWritten.Load()
+			touchCount          = cp.touchCount.Load()
+			hitRate             = 0.0
+		)
+		if getCount > 0 {
+			hitRate = float64(hitCount) / float64(getCount) * 100
+		}
+
+		fmt.Fprintf(os.Stderr, "gobuildcache gets=%d hits=%d misses=%d hit_rate=%.1f local_hits=%d backend_hits=%d puts=%d backend_bytes_read=%d backend_bytes_written=%d touches=%d\n",
+			getCount, hitCount, missCount, hitRate, localCacheHits, backendCacheHits, putCount, backendBytesRead, backendBytesWritten, touchCount)
 	}
 
 	return nil
@@ -609,6 +659,11 @@ func (cp *CacheProg) handleGet(req *Request) (Response, error) {
 			return nil, fmt.Errorf("failed to cache locally: %w", err)
 		}
 
+		// Touch the S3 object to reset lifecycle timer
+		if cp.touchOnGet {
+			cp.maybeTouch(backendKey)
+		}
+
 		return &getResult{
 			outputID:       outputID,
 			diskPath:       diskPath,
@@ -640,6 +695,29 @@ func (cp *CacheProg) handleGet(req *Request) (Response, error) {
 		resp.Time = result.putTime
 	}
 	return resp, nil
+}
+
+// maybeTouch fires an async backend Touch if we haven't already touched this key in this build.
+func (cp *CacheProg) maybeTouch(backendKey []byte) {
+	key := string(backendKey)
+
+	cp.touched.Lock()
+	_, already := cp.touched.keys[key]
+	if !already {
+		cp.touched.keys[key] = struct{}{}
+	}
+	cp.touched.Unlock()
+
+	if already {
+		cp.touchSkipped.Add(1)
+		return
+	}
+
+	cp.touchCount.Add(1)
+	// Fire async — errors are logged by the backend wrapper, not fatal
+	if err := cp.backend.Touch(backendKey); err != nil {
+		cp.logger.Warn("touch-on-GET failed", "key", key, "error", err)
+	}
 }
 
 // sendResponse sends a response to stdout (thread-safe).
