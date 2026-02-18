@@ -30,6 +30,7 @@ var (
 	touchOnGet        bool
 	touchAgeThreshold time.Duration
 	conditionalPut    bool
+	s3PathStyle       bool
 )
 
 func main() {
@@ -80,6 +81,7 @@ func runServerCommand() {
 		touchOnGetDefault        = getEnvBoolWithPrefix("TOUCH_ON_GET", false)
 		conditionalPutDefault    = getEnvBoolWithPrefix("CONDITIONAL_PUT", false)
 		printStatsMachineDefault = getEnvBoolWithPrefix("STATS_MACHINE", false)
+		s3PathStyleDefault       = getEnvBoolWithPrefix("S3_PATH_STYLE", false)
 	)
 	serverFlags.BoolVar(&debug, "debug", debugDefault, "Enable debug logging to stderr (env: DEBUG)")
 	serverFlags.BoolVar(&printStats, "stats", printStatsDefault, "Print cache statistics on exit (env: PRINT_STATS)")
@@ -98,6 +100,7 @@ func runServerCommand() {
 	serverFlags.DurationVar(&touchAgeThreshold, "touch-age-threshold", touchAgeDefault,
 		"Only touch objects older than this duration, e.g. 84h (env: TOUCH_AGE_THRESHOLD)")
 	serverFlags.BoolVar(&conditionalPut, "conditional-put", conditionalPutDefault, "Skip backend PUT if object already exists (env: CONDITIONAL_PUT)")
+	serverFlags.BoolVar(&s3PathStyle, "s3-path-style", s3PathStyleDefault, "Use path-style S3 addressing (required for MinIO) (env: S3_PATH_STYLE)")
 
 	serverFlags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [flags]\n\n", os.Args[0])
@@ -115,6 +118,7 @@ func runServerCommand() {
 		fmt.Fprintf(os.Stderr, "  CACHE_DIR        Local cache directory\n")
 		fmt.Fprintf(os.Stderr, "  S3_BUCKET        S3 bucket name\n")
 		fmt.Fprintf(os.Stderr, "  S3_PREFIX        S3 key prefix\n")
+		fmt.Fprintf(os.Stderr, "  S3_PATH_STYLE    Use path-style S3 addressing (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  COMPRESSION      Enable LZ4 compression (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  ASYNC_BACKEND    Enable async backend writer (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  TOUCH_ON_GET     Touch S3 objects on GET to reset lifecycle expiry (true/false)\n")
@@ -148,13 +152,15 @@ func runClearCommand() {
 		backendDefault  = getEnvWithPrefix("BACKEND_TYPE", getEnv("BACKEND", "disk"))
 		cacheDirDefault = getEnvWithPrefix("CACHE_DIR", filepath.Join(os.TempDir(), "gobuildcache", "cache"))
 		s3BucketDefault = getEnvWithPrefix("S3_BUCKET", "")
-		s3PrefixDefault = getEnvWithPrefix("S3_PREFIX", "")
+		s3PrefixDefault    = getEnvWithPrefix("S3_PREFIX", "")
+		s3PathStyleDefault = getEnvBoolWithPrefix("S3_PATH_STYLE", false)
 	)
 	clearFlags.BoolVar(&debug, "debug", debugDefault, "Enable debug logging to stderr (env: DEBUG)")
 	clearFlags.StringVar(&backendType, "backend", backendDefault, "Backend type: disk (local only), s3 (env: BACKEND_TYPE)")
 	clearFlags.StringVar(&cacheDir, "cache-dir", cacheDirDefault, "Local cache directory (env: CACHE_DIR)")
 	clearFlags.StringVar(&s3Bucket, "s3-bucket", s3BucketDefault, "S3 bucket name (required for s3 backend) (env: S3_BUCKET)")
 	clearFlags.StringVar(&s3Prefix, "s3-prefix", s3PrefixDefault, "S3 key prefix (optional) (env: S3_PREFIX)")
+	clearFlags.BoolVar(&s3PathStyle, "s3-path-style", s3PathStyleDefault, "Use path-style S3 addressing (required for MinIO) (env: S3_PATH_STYLE)")
 
 	clearFlags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s clear [flags]\n\n", os.Args[0])
@@ -235,12 +241,14 @@ func runClearRemoteCommand() {
 		debugDefault     = getEnvBoolWithPrefix("DEBUG", false)
 		backendDefault   = getEnvWithPrefix("BACKEND_TYPE", getEnv("BACKEND", "disk"))
 		s3BucketDefault  = getEnvWithPrefix("S3_BUCKET", "")
-		s3PrefixDefault  = getEnvWithPrefix("S3_PREFIX", "")
+		s3PrefixDefault    = getEnvWithPrefix("S3_PREFIX", "")
+		s3PathStyleDefault = getEnvBoolWithPrefix("S3_PATH_STYLE", false)
 	)
 	clearRemoteFlags.BoolVar(&debug, "debug", debugDefault, "Enable debug logging to stderr (env: DEBUG)")
 	clearRemoteFlags.StringVar(&backendType, "backend", backendDefault, "Backend type: disk, s3 (env: BACKEND_TYPE)")
 	clearRemoteFlags.StringVar(&s3Bucket, "s3-bucket", s3BucketDefault, "S3 bucket name (required for s3 backend) (env: S3_BUCKET)")
 	clearRemoteFlags.StringVar(&s3Prefix, "s3-prefix", s3PrefixDefault, "S3 key prefix (optional) (env: S3_PREFIX)")
+	clearRemoteFlags.BoolVar(&s3PathStyle, "s3-path-style", s3PathStyleDefault, "Use path-style S3 addressing (required for MinIO) (env: S3_PATH_STYLE)")
 
 	clearRemoteFlags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s clear-remote [flags]\n\n", os.Args[0])
@@ -387,7 +395,7 @@ func createBackend() (backends.Backend, error) {
 			return nil, fmt.Errorf("S3 bucket is required for S3 backend (set via -s3-bucket flag or S3_BUCKET env var)")
 		}
 
-		backend, err = backends.NewS3(s3Bucket, s3Prefix, touchAgeThreshold)
+		backend, err = backends.NewS3(s3Bucket, s3Prefix, touchAgeThreshold, s3PathStyle)
 
 	default:
 		return nil, fmt.Errorf("unknown backend type: %s (supported: disk, s3)", backendType)
