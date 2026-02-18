@@ -21,6 +21,11 @@ func (n *Noop) Put(actionID, outputID []byte, body io.Reader, bodySize int64) er
 	return nil
 }
 
+// Has always returns false (no remote backend).
+func (n *Noop) Has(actionID []byte) (bool, error) {
+	return false, nil
+}
+
 // Get always returns a miss.
 // The local cache in server.go handles retrieving cached entries.
 func (n *Noop) Get(actionID []byte) ([]byte, io.ReadCloser, int64, *time.Time, bool, error) {

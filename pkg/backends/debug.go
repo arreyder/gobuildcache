@@ -40,6 +40,23 @@ func (d *Debug) Put(actionID, outputID []byte, body io.Reader, bodySize int64) e
 	return nil
 }
 
+// Has checks object existence with debug logging.
+func (d *Debug) Has(actionID []byte) (bool, error) {
+	fmt.Fprintf(os.Stderr, "[DEBUG] Has: actionID=%s\n", hex.EncodeToString(actionID))
+
+	start := time.Now()
+	exists, err := d.backend.Has(actionID)
+	duration := time.Since(start)
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG] Has: ERROR: %v (duration: %v)\n", err, duration)
+	} else {
+		fmt.Fprintf(os.Stderr, "[DEBUG] Has: exists=%v (duration: %v)\n", exists, duration)
+	}
+
+	return exists, err
+}
+
 // Get retrieves an object from the backend storage with debug logging.
 func (d *Debug) Get(actionID []byte) ([]byte, io.ReadCloser, int64, *time.Time, bool, error) {
 	fmt.Fprintf(os.Stderr, "[DEBUG] Get: actionID=%s\n", hex.EncodeToString(actionID))

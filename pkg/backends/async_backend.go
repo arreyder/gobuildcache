@@ -87,6 +87,11 @@ func (abw *AsyncBackendWriter) Put(actionID, outputID []byte, body io.Reader, bo
 	return nil
 }
 
+// Has passes through to the underlying backend (synchronous).
+func (abw *AsyncBackendWriter) Has(actionID []byte) (bool, error) {
+	return abw.backend.Has(actionID)
+}
+
 // Get passes through to the underlying backend (synchronous).
 // GET operations remain synchronous as they're in the critical path.
 func (abw *AsyncBackendWriter) Get(actionID []byte) (outputID []byte, body io.ReadCloser, size int64, putTime *time.Time, miss bool, err error) {

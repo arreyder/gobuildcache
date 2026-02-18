@@ -27,6 +27,7 @@ var (
 	compression      bool
 	asyncBackend     bool
 	touchOnGet       bool
+	conditionalPut   bool
 )
 
 func main() {
@@ -75,6 +76,7 @@ func runServerCommand() {
 		compressionDefault      = getEnvBoolWithPrefix("COMPRESSION", true)
 		asyncBackendDefault     = getEnvBoolWithPrefix("ASYNC_BACKEND", true)
 		touchOnGetDefault       = getEnvBoolWithPrefix("TOUCH_ON_GET", false)
+		conditionalPutDefault   = getEnvBoolWithPrefix("CONDITIONAL_PUT", false)
 		printStatsMachineDefault = getEnvBoolWithPrefix("STATS_MACHINE", false)
 	)
 	serverFlags.BoolVar(&debug, "debug", debugDefault, "Enable debug logging to stderr (env: DEBUG)")
@@ -90,6 +92,7 @@ func runServerCommand() {
 	serverFlags.BoolVar(&compression, "compression", compressionDefault, "Enable LZ4 compression for backend storage (env: COMPRESSION)")
 	serverFlags.BoolVar(&asyncBackend, "async-backend", asyncBackendDefault, "Enable async backend writer for non-blocking PUT operations (env: ASYNC_BACKEND)")
 	serverFlags.BoolVar(&touchOnGet, "touch-on-get", touchOnGetDefault, "Touch S3 objects on GET to reset lifecycle expiry (env: TOUCH_ON_GET)")
+	serverFlags.BoolVar(&conditionalPut, "conditional-put", conditionalPutDefault, "Skip backend PUT if object already exists (env: CONDITIONAL_PUT)")
 
 	serverFlags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [flags]\n\n", os.Args[0])
@@ -110,6 +113,7 @@ func runServerCommand() {
 		fmt.Fprintf(os.Stderr, "  COMPRESSION      Enable LZ4 compression (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  ASYNC_BACKEND    Enable async backend writer (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  TOUCH_ON_GET     Touch S3 objects on GET to reset lifecycle expiry (true/false)\n")
+		fmt.Fprintf(os.Stderr, "  CONDITIONAL_PUT  Skip backend PUT if object already exists (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  STATS_MACHINE    Print one-line machine-readable stats on exit (true/false)\n")
 		fmt.Fprintf(os.Stderr, "\nNote: Command-line flags take precedence over environment variables.\n")
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
@@ -309,6 +313,7 @@ func runServer() {
 		PrintStatsMachine: printStatsMachine,
 		Compression:      compression,
 		TouchOnGet:       touchOnGet,
+		ConditionalPut:   conditionalPut,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating cache program: %v\n", err)

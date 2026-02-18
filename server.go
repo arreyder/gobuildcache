@@ -121,6 +121,10 @@ type CacheProg struct {
 	}
 	touchCount   atomic.Int64 // Touches dispatched
 	touchSkipped atomic.Int64 // Skipped (already touched this build)
+
+	// Conditional PUT state
+	conditionalPut    bool
+	putSkippedBackend atomic.Int64 // PUTs skipped because backend already has the object
 }
 
 // CacheProgOptions holds configuration for NewCacheProg.
@@ -130,6 +134,7 @@ type CacheProgOptions struct {
 	PrintStatsMachine bool
 	Compression      bool
 	TouchOnGet       bool
+	ConditionalPut   bool
 }
 
 // NewCacheProg creates a new cache program instance.
@@ -163,6 +168,7 @@ func NewCacheProg(
 		printStatsMachine: opts.PrintStatsMachine,
 		compression:       opts.Compression,
 		touchOnGet:        opts.TouchOnGet,
+		conditionalPut:    opts.ConditionalPut,
 		logger:            logger,
 		locker:            sfGroup,
 		latencyTracker:    metrics.NewLatencyTracker(0.01), // 1% relative accuracy
@@ -360,6 +366,13 @@ func (cp *CacheProg) Run() error {
 				touchCount, touchSkipped)
 		}
 
+		// Print conditional PUT statistics if enabled
+		if cp.conditionalPut {
+			putSkippedBackend := cp.putSkippedBackend.Load()
+			fmt.Fprintf(os.Stderr, "  Conditional PUT: %d skipped (already in backend)\n",
+				putSkippedBackend)
+		}
+
 		// Print latency quantiles
 		fmt.Fprintf(os.Stderr, "\nLatency quantiles (ms):\n")
 		allStats := cp.latencyTracker.GetAllStats()
@@ -390,8 +403,10 @@ func (cp *CacheProg) Run() error {
 			hitRate = float64(hitCount) / float64(getCount) * 100
 		}
 
-		fmt.Fprintf(os.Stderr, "gobuildcache gets=%d hits=%d misses=%d hit_rate=%.1f local_hits=%d backend_hits=%d puts=%d backend_bytes_read=%d backend_bytes_written=%d touches=%d\n",
-			getCount, hitCount, missCount, hitRate, localCacheHits, backendCacheHits, putCount, backendBytesRead, backendBytesWritten, touchCount)
+		putSkippedBackend := cp.putSkippedBackend.Load()
+
+		fmt.Fprintf(os.Stderr, "gobuildcache gets=%d hits=%d misses=%d hit_rate=%.1f local_hits=%d backend_hits=%d puts=%d puts_skipped=%d backend_bytes_read=%d backend_bytes_written=%d touches=%d\n",
+			getCount, hitCount, missCount, hitRate, localCacheHits, backendCacheHits, putCount, putSkippedBackend, backendBytesRead, backendBytesWritten, touchCount)
 	}
 
 	return nil
@@ -486,6 +501,24 @@ func (cp *CacheProg) handlePut(req *Request) (Response, error) {
 			return nil, fmt.Errorf("failed to write to local cache: %w", err)
 		}
 
+		backendKey := cp.generateBackendKey(req.ActionID)
+
+		// Check if backend already has this object to avoid redundant uploads
+		if cp.conditionalPut {
+			hasStart := time.Now()
+			exists, err := cp.backend.Has(backendKey)
+			cp.latencyTracker.Record("put_backend_has", time.Since(hasStart))
+
+			if err != nil {
+				cp.logger.Warn("conditional PUT check failed, proceeding with upload",
+					"actionID", hex.EncodeToString(req.ActionID),
+					"error", err)
+			} else if exists {
+				cp.putSkippedBackend.Add(1)
+				return &putResult{diskPath: diskPath}, nil
+			}
+		}
+
 		var (
 			backendPutStart = time.Now()
 			dataToStore     []byte
@@ -510,7 +543,6 @@ func (cp *CacheProg) handlePut(req *Request) (Response, error) {
 			dataSize = req.BodySize
 		}
 
-		backendKey := cp.generateBackendKey(req.ActionID)
 		err = cp.backend.Put(backendKey, req.OutputID, bytes.NewReader(dataToStore), dataSize)
 		cp.latencyTracker.Record("put_backend", time.Since(backendPutStart))
 

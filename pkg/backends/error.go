@@ -58,6 +58,14 @@ func (e *Error) Put(actionID, outputID []byte, body io.Reader, bodySize int64) e
 	return e.backend.Put(actionID, outputID, body, bodySize)
 }
 
+// Has checks object existence, potentially returning an error.
+func (e *Error) Has(actionID []byte) (bool, error) {
+	if e.shouldError() {
+		return false, fmt.Errorf("error backend: simulated Has error (error rate: %.2f%%)", e.errorRate*100)
+	}
+	return e.backend.Has(actionID)
+}
+
 // Get retrieves an object from the backend storage, potentially returning an error.
 func (e *Error) Get(actionID []byte) ([]byte, io.ReadCloser, int64, *time.Time, bool, error) {
 	if e.shouldError() {
