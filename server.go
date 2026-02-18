@@ -374,6 +374,19 @@ func (cp *CacheProg) Run() error {
 				putSkippedBackend)
 		}
 
+		// Print backend hit entry age distribution (lifecycle health)
+		if ageStats, err := cp.latencyTracker.GetStats("backend_hit_entry_age"); err == nil && ageStats.Count > 0 {
+			msToHours := 1.0 / (1000.0 * 3600.0)
+			fmt.Fprintf(os.Stderr, "\nBackend hit entry age (hours since original PUT):\n")
+			fmt.Fprintf(os.Stderr, "  entries: %d, min=%.1fh p50=%.1fh p90=%.1fh p99=%.1fh max=%.1fh\n",
+				ageStats.Count,
+				ageStats.Min*msToHours,
+				ageStats.P50*msToHours,
+				ageStats.P90*msToHours,
+				ageStats.P99*msToHours,
+				ageStats.Max*msToHours)
+		}
+
 		// Print latency quantiles
 		fmt.Fprintf(os.Stderr, "\nLatency quantiles (ms):\n")
 		allStats := cp.latencyTracker.GetAllStats()
@@ -381,6 +394,10 @@ func (cp *CacheProg) Run() error {
 			fmt.Fprintf(os.Stderr, "  No latency data collected\n")
 		} else {
 			for _, stat := range allStats {
+				// Skip age stats here since we printed them separately above
+				if stat.Operation == "backend_hit_entry_age" {
+					continue
+				}
 				fmt.Fprintf(os.Stderr, "%s\n", stat.String())
 			}
 		}
@@ -407,8 +424,16 @@ func (cp *CacheProg) Run() error {
 		putSkippedBackend := cp.putSkippedBackend.Load()
 		touchSkippedFresh := cp.getAsyncTouchSkippedFresh()
 
-		fmt.Fprintf(os.Stderr, "gobuildcache gets=%d hits=%d misses=%d hit_rate=%.1f local_hits=%d backend_hits=%d puts=%d puts_skipped=%d backend_bytes_read=%d backend_bytes_written=%d touches=%d touches_skipped_fresh=%d\n",
-			getCount, hitCount, missCount, hitRate, localCacheHits, backendCacheHits, putCount, putSkippedBackend, backendBytesRead, backendBytesWritten, touchCount, touchSkippedFresh)
+		// Get entry age percentiles for machine stats
+		var ageP50Hours, ageMaxHours float64
+		if ageStats, err := cp.latencyTracker.GetStats("backend_hit_entry_age"); err == nil && ageStats.Count > 0 {
+			msToHours := 1.0 / (1000.0 * 3600.0)
+			ageP50Hours = ageStats.P50 * msToHours
+			ageMaxHours = ageStats.Max * msToHours
+		}
+
+		fmt.Fprintf(os.Stderr, "gobuildcache gets=%d hits=%d misses=%d hit_rate=%.1f local_hits=%d backend_hits=%d puts=%d puts_skipped=%d backend_bytes_read=%d backend_bytes_written=%d touches=%d touches_skipped_fresh=%d entry_age_p50_hours=%.1f entry_age_max_hours=%.1f\n",
+			getCount, hitCount, missCount, hitRate, localCacheHits, backendCacheHits, putCount, putSkippedBackend, backendBytesRead, backendBytesWritten, touchCount, touchSkippedFresh, ageP50Hours, ageMaxHours)
 	}
 
 	return nil
@@ -638,8 +663,11 @@ func (cp *CacheProg) handleGet(req *Request) (Response, error) {
 			}, nil
 		}
 
-		// Backend hit - track bytes read from backend (compressed size)
+		// Backend hit - track bytes and entry age
 		cp.backendBytesRead.Add(size)
+		if putTime != nil {
+			cp.latencyTracker.Record("backend_hit_entry_age", time.Since(*putTime))
+		}
 
 		// Backend hit - decompress if needed, then write to local cache with metadata
 		defer body.Close()

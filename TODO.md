@@ -14,5 +14,8 @@
   when set (e.g. `84h`), Touch does a `HeadObject` first and skips the
   `CopyObject` if the object was modified more recently than the threshold.
   Reduces unnecessary S3 calls when builds run frequently.
-- [ ] **Lifecycle-aware metrics** — distinguish S3 misses (never existed) from
-  entries that likely expired, to help tune lifecycle policy duration.
+- [x] **Lifecycle-aware metrics** — tracks the age of backend cache hits
+  (hours since original PUT) using DDSketch quantile estimation. Reports
+  p50/p90/p99/max age in human-readable stats and `entry_age_p50_hours` /
+  `entry_age_max_hours` in machine-readable output. If entries are
+  approaching the lifecycle duration, the policy is too short.
