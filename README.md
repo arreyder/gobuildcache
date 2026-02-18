@@ -6,6 +6,12 @@
   - [S3 Lifecycle Policy](#s3-lifecycle-policy)
 - [Preventing Cache Bloat](#preventing-cache-bloat)
 - [Configuration](#configuration)
+- [Lifecycle-Aware Features](#lifecycle-aware-features)
+  - [Touch-on-GET](#touch-on-get)
+  - [Debounced Touch](#debounced-touch)
+  - [Conditional PUT](#conditional-put)
+  - [Lifecycle-Aware Metrics](#lifecycle-aware-metrics)
+- [Local Testing with MinIO](#local-testing-with-minio)
 - [How it Works](#how-it-works)
   - [Architecture Overview](#architecture-overview)
   - [Processing GET commands](#processing-get-commands)
@@ -157,9 +163,46 @@ All environment variables support both `GOBUILDCACHE_<KEY>` and `<KEY>` forms (e
 | `-lock-dir` | `GOBUILDCACHE_LOCK_DIR` | `$TMPDIR/gobuildcache/locks` | Filesystem lock directory |
 | `-s3-bucket` | `GOBUILDCACHE_S3_BUCKET` | (none) | S3 bucket name (required for S3) |
 | `-s3-prefix` | `GOBUILDCACHE_S3_PREFIX` | (empty) | S3 key prefix |
+| `-s3-path-style` | `GOBUILDCACHE_S3_PATH_STYLE` | `false` | Use path-style S3 addressing (required for MinIO) |
+| `-compression` | `GOBUILDCACHE_COMPRESSION` | `true` | Enable LZ4 compression for backend storage |
+| `-async-backend` | `GOBUILDCACHE_ASYNC_BACKEND` | `true` | Enable async backend writer for non-blocking PUTs |
+| `-touch-on-get` | `GOBUILDCACHE_TOUCH_ON_GET` | `false` | Touch S3 objects on GET to reset lifecycle expiry |
+| `-touch-age-threshold` | `GOBUILDCACHE_TOUCH_AGE_THRESHOLD` | `0` | Only touch objects older than this duration (e.g. `84h`) |
+| `-conditional-put` | `GOBUILDCACHE_CONDITIONAL_PUT` | `false` | Skip backend PUT if object already exists |
 | `-debug` | `GOBUILDCACHE_DEBUG` | `false` | Enable debug logging |
-| `-stats` | `GOBUILDCACHE_PRINT_STATS` | `false` | Print cache statistics on exit |
+| `-stats` | `GOBUILDCACHE_PRINT_STATS` | `true` | Print cache statistics on exit |
+| `-stats-machine` | `GOBUILDCACHE_STATS_MACHINE` | `false` | Print one-line machine-readable stats on exit |
 
+
+# Lifecycle-Aware Features
+
+When using S3 lifecycle policies to expire old cache entries, frequently-accessed entries can be incorrectly expired if they haven't been re-uploaded recently. `gobuildcache` provides several features to work around this.
+
+## Touch-on-GET
+
+Enable `-touch-on-get` to perform an S3 `CopyObject` self-to-self on backend cache hits, resetting the object's `LastModified` timestamp. This prevents lifecycle policies from expiring entries that are still actively used.
+
+## Debounced Touch
+
+When `-touch-age-threshold` is set (e.g. `84h`), `gobuildcache` checks the object's `LastModified` before touching and skips the `CopyObject` if the object was modified more recently than the threshold. This reduces unnecessary S3 API calls when builds run frequently.
+
+## Conditional PUT
+
+Enable `-conditional-put` to perform a `HeadObject` check before uploading. If the object already exists in S3, the PUT is skipped. This saves bandwidth and S3 write costs on ephemeral CI agents where the local cache is cold but the remote cache is warm.
+
+## Lifecycle-Aware Metrics
+
+Cache statistics include the age of backend cache hits (hours since original PUT) using DDSketch quantile estimation. The human-readable stats report p50/p90/p99/max entry age, and the machine-readable output (`-stats-machine`) includes `entry_age_p50_hours` and `entry_age_max_hours`. If entries are approaching your lifecycle policy duration, the policy may be too short.
+
+# Local Testing with MinIO
+
+You can run the full S3 integration test locally against a [MinIO](https://min.io/) container without any cloud credentials:
+
+```bash
+make test-s3-local
+```
+
+This requires Docker and will automatically start a MinIO container, create a test bucket, run the tests, and clean up. The `-s3-path-style` flag (or `GOBUILDCACHE_S3_PATH_STYLE=true`) is required for MinIO compatibility.
 
 # How it Works
 
