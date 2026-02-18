@@ -86,7 +86,7 @@ func TestCacheIntegrationS3(t *testing.T) {
 	firstRunCmd := exec.Command("go", "test", "-v", testsDir)
 	firstRunCmd.Dir = workspaceDir
 	// Set environment to use S3 backend when Go starts the cache program
-	firstRunCmd.Env = append(baseEnv,
+	firstRunCmd.Env = append(append([]string{}, baseEnv...),
 		"GOCACHEPROG="+binaryPath,
 		"GOBUILDCACHE_BACKEND_TYPE=s3",
 		"GOBUILDCACHE_DEBUG=true",
@@ -113,7 +113,7 @@ func TestCacheIntegrationS3(t *testing.T) {
 	secondRunCmd := exec.Command("go", "test", "-v", testsDir)
 	secondRunCmd.Dir = workspaceDir
 	// Set environment to use S3 backend when Go starts the cache program
-	secondRunCmd.Env = append(baseEnv,
+	secondRunCmd.Env = append(append([]string{}, baseEnv...),
 		"GOCACHEPROG="+binaryPath,
 		"GOBUILDCACHE_BACKEND_TYPE=s3",
 		"GOBUILDCACHE_DEBUG=true",

@@ -88,7 +88,7 @@ func (lc *localCache) writeMetadata(actionID []byte, meta localCacheMetadata) er
 
 	// Write to temp file first for atomic operation.
 	tmpPath := metaPath + ".tmp"
-	if err := os.WriteFile(tmpPath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(tmpPath, []byte(content), 0600); err != nil {
 		return fmt.Errorf("failed to write temp metadata: %w", err)
 	}
 
@@ -96,7 +96,7 @@ func (lc *localCache) writeMetadata(actionID []byte, meta localCacheMetadata) er
 	// from ever existing, although it increases the number of syscalls
 	// we need to perform.
 	if err := os.Rename(tmpPath, metaPath); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("failed to rename metadata: %w", err)
 	}
 
@@ -121,11 +121,11 @@ func (lc *localCache) readMetadata(actionID []byte) (*localCacheMetadata, error)
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "outputID:") {
-			fmt.Sscanf(line, "outputID:%s", &outputIDHex)
+			_, _ = fmt.Sscanf(line, "outputID:%s", &outputIDHex)
 		} else if strings.HasPrefix(line, "size:") {
-			fmt.Sscanf(line, "size:%d", &size)
+			_, _ = fmt.Sscanf(line, "size:%d", &size)
 		} else if strings.HasPrefix(line, "time:") {
-			fmt.Sscanf(line, "time:%d", &putTimeUnix)
+			_, _ = fmt.Sscanf(line, "time:%d", &putTimeUnix)
 		}
 	}
 

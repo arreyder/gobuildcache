@@ -135,4 +135,3 @@ func (d *Debug) Clear() error {
 	fmt.Fprintf(os.Stderr, "[DEBUG] Clear: cache cleared successfully (duration: %v)\n", duration)
 	return nil
 }
-

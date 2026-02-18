@@ -60,7 +60,7 @@ func (g *FSLockGroup) DoWithLock(key string, fn func() (interface{}, error)) (v 
 	if !acquired {
 		return nil, fmt.Errorf("failed to acquire lock: timeout")
 	}
-	defer fileLock.Unlock()
+	defer func() { _ = fileLock.Unlock() }()
 
 	return fn()
 }

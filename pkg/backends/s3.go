@@ -149,19 +149,19 @@ func (s *S3) Get(actionID []byte) ([]byte, io.ReadCloser, int64, *time.Time, boo
 	outputID, err := hex.DecodeString(outputIDHex)
 	if err != nil {
 		result.Body.Close()
-		return nil, nil, 0, nil, true, nil
+		return nil, nil, 0, nil, true, fmt.Errorf("failed to decode outputID: %w", err)
 	}
 
 	size, err := strconv.ParseInt(sizeStr, 10, 64)
 	if err != nil {
 		result.Body.Close()
-		return nil, nil, 0, nil, true, nil
+		return nil, nil, 0, nil, true, fmt.Errorf("failed to parse size: %w", err)
 	}
 
 	putTimeUnix, err := strconv.ParseInt(timeStr, 10, 64)
 	if err != nil {
 		result.Body.Close()
-		return nil, nil, 0, nil, true, nil
+		return nil, nil, 0, nil, true, fmt.Errorf("failed to parse time: %w", err)
 	}
 	putTime := time.Unix(putTimeUnix, 0)
 

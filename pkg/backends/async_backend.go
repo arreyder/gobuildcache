@@ -68,7 +68,7 @@ func (abw *AsyncBackendWriter) Put(actionID, outputID []byte, body io.Reader, bo
 		err := abw.backend.Put(actionID, outputID, bytes.NewReader(bodyData), bodySize)
 		duration := time.Since(start)
 
-		abw.totalPutTime.Add(int64(duration.Microseconds()))
+		abw.totalPutTime.Add(duration.Microseconds())
 
 		if err != nil {
 			abw.failedPuts.Add(1)
@@ -96,7 +96,7 @@ func (abw *AsyncBackendWriter) Has(actionID []byte) (bool, error) {
 
 // Get passes through to the underlying backend (synchronous).
 // GET operations remain synchronous as they're in the critical path.
-func (abw *AsyncBackendWriter) Get(actionID []byte) (outputID []byte, body io.ReadCloser, size int64, putTime *time.Time, miss bool, err error) {
+func (abw *AsyncBackendWriter) Get(actionID []byte) ([]byte, io.ReadCloser, int64, *time.Time, bool, error) {
 	return abw.backend.Get(actionID)
 }
 
@@ -177,11 +177,4 @@ type AsyncBackendStats struct {
 	FailedPuts         int64
 	TotalPutTimeMicros int64
 	TouchSkippedFresh  int64
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
