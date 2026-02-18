@@ -14,17 +14,19 @@ import (
 
 // Global flags
 var (
-	debug        bool
-	printStats   bool
-	backendType  string
-	lockingType  string
-	lockDir      string
-	cacheDir     string
-	s3Bucket     string
-	s3Prefix     string
-	errorRate    float64
-	compression  bool
-	asyncBackend bool
+	debug            bool
+	printStats       bool
+	printStatsMachine bool
+	backendType      string
+	lockingType      string
+	lockDir          string
+	cacheDir         string
+	s3Bucket         string
+	s3Prefix         string
+	errorRate        float64
+	compression      bool
+	asyncBackend     bool
+	touchOnGet       bool
 )
 
 func main() {
@@ -70,11 +72,14 @@ func runServerCommand() {
 		s3BucketDefault     = getEnvWithPrefix("S3_BUCKET", "")
 		s3PrefixDefault     = getEnvWithPrefix("S3_PREFIX", "gobuildcache/")
 		errorRateDefault    = getEnvFloatWithPrefix("ERROR_RATE", 0.0)
-		compressionDefault  = getEnvBoolWithPrefix("COMPRESSION", true)
-		asyncBackendDefault = getEnvBoolWithPrefix("ASYNC_BACKEND", true)
+		compressionDefault      = getEnvBoolWithPrefix("COMPRESSION", true)
+		asyncBackendDefault     = getEnvBoolWithPrefix("ASYNC_BACKEND", true)
+		touchOnGetDefault       = getEnvBoolWithPrefix("TOUCH_ON_GET", false)
+		printStatsMachineDefault = getEnvBoolWithPrefix("STATS_MACHINE", false)
 	)
 	serverFlags.BoolVar(&debug, "debug", debugDefault, "Enable debug logging to stderr (env: DEBUG)")
 	serverFlags.BoolVar(&printStats, "stats", printStatsDefault, "Print cache statistics on exit (env: PRINT_STATS)")
+	serverFlags.BoolVar(&printStatsMachine, "stats-machine", printStatsMachineDefault, "Print one-line machine-readable stats on exit (env: STATS_MACHINE)")
 	serverFlags.StringVar(&backendType, "backend", backendDefault, "Backend type: disk (local only), s3 (env: BACKEND_TYPE)")
 	serverFlags.StringVar(&lockingType, "lock-type", lockTypeDefault, "Locking type: memory (in-memory), fslock (filesystem) (env: LOCK_TYPE)")
 	serverFlags.StringVar(&lockDir, "lock-dir", lockDirDefault, "Lock directory for fslock (env: LOCK_DIR)")
@@ -84,6 +89,7 @@ func runServerCommand() {
 	serverFlags.Float64Var(&errorRate, "error-rate", errorRateDefault, "Error injection rate (0.0-1.0) for testing error handling (env: ERROR_RATE)")
 	serverFlags.BoolVar(&compression, "compression", compressionDefault, "Enable LZ4 compression for backend storage (env: COMPRESSION)")
 	serverFlags.BoolVar(&asyncBackend, "async-backend", asyncBackendDefault, "Enable async backend writer for non-blocking PUT operations (env: ASYNC_BACKEND)")
+	serverFlags.BoolVar(&touchOnGet, "touch-on-get", touchOnGetDefault, "Touch S3 objects on GET to reset lifecycle expiry (env: TOUCH_ON_GET)")
 
 	serverFlags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [flags]\n\n", os.Args[0])
@@ -103,6 +109,8 @@ func runServerCommand() {
 		fmt.Fprintf(os.Stderr, "  S3_PREFIX        S3 key prefix\n")
 		fmt.Fprintf(os.Stderr, "  COMPRESSION      Enable LZ4 compression (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  ASYNC_BACKEND    Enable async backend writer (true/false)\n")
+		fmt.Fprintf(os.Stderr, "  TOUCH_ON_GET     Touch S3 objects on GET to reset lifecycle expiry (true/false)\n")
+		fmt.Fprintf(os.Stderr, "  STATS_MACHINE    Print one-line machine-readable stats on exit (true/false)\n")
 		fmt.Fprintf(os.Stderr, "\nNote: Command-line flags take precedence over environment variables.\n")
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
 		fmt.Fprintf(os.Stderr, "  # Run with disk backend using flags:\n")
@@ -295,7 +303,13 @@ func runServer() {
 		os.Exit(1)
 	}
 
-	prog, err := NewCacheProg(backend, lockingGroup, cacheDir, debug, printStats, compression)
+	prog, err := NewCacheProg(backend, lockingGroup, cacheDir, CacheProgOptions{
+		Debug:            debug,
+		PrintStats:       printStats,
+		PrintStatsMachine: printStatsMachine,
+		Compression:      compression,
+		TouchOnGet:       touchOnGet,
+	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating cache program: %v\n", err)
 		os.Exit(1)

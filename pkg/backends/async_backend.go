@@ -93,6 +93,33 @@ func (abw *AsyncBackendWriter) Get(actionID []byte) (outputID []byte, body io.Re
 	return abw.backend.Get(actionID)
 }
 
+// Touch asynchronously refreshes the backend timestamp for the given actionID.
+func (abw *AsyncBackendWriter) Touch(actionID []byte) error {
+	select {
+	case abw.semaphore <- struct{}{}:
+	default:
+		return fmt.Errorf("too many concurrent operations")
+	}
+
+	// Copy actionID since we're going async
+	id := make([]byte, len(actionID))
+	copy(id, actionID)
+
+	abw.wg.Add(1)
+	go func() {
+		defer abw.wg.Done()
+		defer func() { <-abw.semaphore }()
+
+		if err := abw.backend.Touch(id); err != nil {
+			abw.logger.Warn("async backend Touch failed",
+				"actionID", fmt.Sprintf("%x", id[:min(8, len(id))]),
+				"error", err)
+		}
+	}()
+
+	return nil
+}
+
 // Close gracefully shuts down the async writer and waits for all in-flight operations to complete.
 // It also closes the underlying backend.
 func (abw *AsyncBackendWriter) Close() error {

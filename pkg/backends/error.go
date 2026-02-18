@@ -67,6 +67,14 @@ func (e *Error) Get(actionID []byte) ([]byte, io.ReadCloser, int64, *time.Time, 
 	return e.backend.Get(actionID)
 }
 
+// Touch refreshes the backend timestamp, potentially returning an error.
+func (e *Error) Touch(actionID []byte) error {
+	if e.shouldError() {
+		return fmt.Errorf("error backend: simulated Touch error (error rate: %.2f%%)", e.errorRate*100)
+	}
+	return e.backend.Touch(actionID)
+}
+
 // Close performs cleanup operations, potentially returning an error.
 func (e *Error) Close() error {
 	if e.shouldError() {

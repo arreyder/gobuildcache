@@ -27,6 +27,11 @@ func (n *Noop) Get(actionID []byte) ([]byte, io.ReadCloser, int64, *time.Time, b
 	return nil, nil, 0, nil, true, nil
 }
 
+// Touch does nothing.
+func (n *Noop) Touch(actionID []byte) error {
+	return nil
+}
+
 // Close does nothing.
 func (n *Noop) Close() error {
 	return nil
