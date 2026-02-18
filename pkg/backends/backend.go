@@ -23,6 +23,10 @@ type Backend interface {
 	// The backend stores the data in its storage system and returns nil on success.
 	Put(actionID, outputID []byte, body io.Reader, bodySize int64) error
 
+	// Has checks whether an object exists in the backend storage without retrieving it.
+	// Returns true if the object exists, false otherwise.
+	Has(actionID []byte) (bool, error)
+
 	// Get retrieves an object from the backend storage.
 	// actionID is the cache key to look up.
 	// Returns outputID, body (as io.ReadCloser), size, putTime, and whether it was a miss.

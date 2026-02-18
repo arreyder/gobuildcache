@@ -99,6 +99,24 @@ func (s *S3) Put(actionID, outputID []byte, body io.Reader, bodySize int64) erro
 	return nil
 }
 
+// Has checks whether an object exists in S3 via HeadObject.
+func (s *S3) Has(actionID []byte) (bool, error) {
+	key := s.actionIDToKey(actionID)
+
+	_, err := s.client.HeadObject(s.ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		if s.isNotFoundError(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to check S3 object: %w", err)
+	}
+
+	return true, nil
+}
+
 // Get retrieves an object from S3.
 // Returns the object data as an io.ReadCloser that must be closed by the caller.
 func (s *S3) Get(actionID []byte) ([]byte, io.ReadCloser, int64, *time.Time, bool, error) {
