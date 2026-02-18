@@ -362,8 +362,9 @@ func (cp *CacheProg) Run() error {
 		if cp.touchOnGet {
 			touchCount := cp.touchCount.Load()
 			touchSkipped := cp.touchSkipped.Load()
-			fmt.Fprintf(os.Stderr, "  Touch-on-GET: %d dispatched, %d skipped (dedup)\n",
-				touchCount, touchSkipped)
+			touchSkippedFresh := cp.getAsyncTouchSkippedFresh()
+			fmt.Fprintf(os.Stderr, "  Touch-on-GET: %d dispatched, %d skipped (dedup), %d skipped (fresh)\n",
+				touchCount, touchSkipped, touchSkippedFresh)
 		}
 
 		// Print conditional PUT statistics if enabled
@@ -404,9 +405,10 @@ func (cp *CacheProg) Run() error {
 		}
 
 		putSkippedBackend := cp.putSkippedBackend.Load()
+		touchSkippedFresh := cp.getAsyncTouchSkippedFresh()
 
-		fmt.Fprintf(os.Stderr, "gobuildcache gets=%d hits=%d misses=%d hit_rate=%.1f local_hits=%d backend_hits=%d puts=%d puts_skipped=%d backend_bytes_read=%d backend_bytes_written=%d touches=%d\n",
-			getCount, hitCount, missCount, hitRate, localCacheHits, backendCacheHits, putCount, putSkippedBackend, backendBytesRead, backendBytesWritten, touchCount)
+		fmt.Fprintf(os.Stderr, "gobuildcache gets=%d hits=%d misses=%d hit_rate=%.1f local_hits=%d backend_hits=%d puts=%d puts_skipped=%d backend_bytes_read=%d backend_bytes_written=%d touches=%d touches_skipped_fresh=%d\n",
+			getCount, hitCount, missCount, hitRate, localCacheHits, backendCacheHits, putCount, putSkippedBackend, backendBytesRead, backendBytesWritten, touchCount, touchSkippedFresh)
 	}
 
 	return nil
@@ -727,6 +729,20 @@ func (cp *CacheProg) handleGet(req *Request) (Response, error) {
 		resp.Time = result.putTime
 	}
 	return resp, nil
+}
+
+// getAsyncTouchSkippedFresh extracts the debounced touch skip count from the async backend wrapper.
+func (cp *CacheProg) getAsyncTouchSkippedFresh() int64 {
+	if abw, ok := cp.backend.(*backends.AsyncBackendWriter); ok {
+		return abw.Stats().TouchSkippedFresh
+	}
+	// If wrapped in debug, try to unwrap
+	if dbg, ok := cp.backend.(*backends.Debug); ok {
+		if abw, ok := dbg.Unwrap().(*backends.AsyncBackendWriter); ok {
+			return abw.Stats().TouchSkippedFresh
+		}
+	}
+	return 0
 }
 
 // maybeTouch fires an async backend Touch if we haven't already touched this key in this build.
