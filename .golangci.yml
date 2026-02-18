@@ -1,0 +1,103 @@
+version: "2"
+linters:
+  default: none
+  enable:
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - durationcheck
+    - errcheck
+    - errorlint
+    - exhaustive
+    - goconst
+    - gocritic
+    - goprintffuncname
+    - gosec
+    - govet
+    - ineffassign
+    - nakedret
+    - nilerr
+    - noctx
+    - nolintlint
+    - nonamedreturns
+    - nosprintfhostport
+    - predeclared
+    - revive
+    - staticcheck
+    - unconvert
+    - unused
+    - usestdlibvars
+    - whitespace
+  settings:
+    exhaustive:
+      default-signifies-exhaustive: true
+    gocritic:
+      settings:
+        underef:
+          skipRecvDeref: false
+      disabled-checks:
+        - commentFormatting
+        - ifElseChain
+        - singleCaseSwitch
+        - exitAfterDefer
+    govet:
+      disable:
+        - fieldalignment
+        - shadow
+      enable-all: true
+    revive:
+      severity: error
+      rules:
+        - name: atomic
+        - name: line-length-limit
+          arguments:
+            - 200
+        - name: unhandled-error
+          arguments:
+            - "os.(Setenv|RemoveAll)"
+            - "fmt.(P|Fp)rint(f|ln)?"
+            - "os.Std(err|out).Sync"
+            - "bytes.Buffer.Write(String|Rune|Byte)?"
+            - "strings.Builder.Write(String|Rune|Byte)?"
+        - name: var-naming
+          arguments:
+            - - ID
+              - URL
+              - HTTP
+              - API
+            - []
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - gosec
+          - goconst
+        path: _test\.go
+      - linters:
+          - noctx
+        path: _test\.go
+      - linters:
+          - gosec
+        text: "G705"
+      - linters:
+          - nonamedreturns
+        path: pkg/locking/
+      - linters:
+          - revive
+        path: pkg/metrics/
+        text: "var-naming.*package name"
+      - linters:
+          - nilerr
+        path: integrationtests/
+issues:
+  max-same-issues: 50
+formatters:
+  enable:
+    - goimports
+  exclusions:
+    generated: lax

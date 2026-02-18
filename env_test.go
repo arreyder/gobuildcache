@@ -38,7 +38,7 @@ func TestGetEnvWithPrefix(t *testing.T) {
 			key:          "TEST_KEY",
 			defaultValue: "default",
 			envVars: map[string]string{
-				"TEST_KEY":             "unprefixed_value",
+				"TEST_KEY":              "unprefixed_value",
 				"GOBUILDCACHE_TEST_KEY": "prefixed_value",
 			},
 			expected: "prefixed_value",
@@ -128,7 +128,7 @@ func TestGetEnvBoolWithPrefix(t *testing.T) {
 			key:          "TEST_BOOL",
 			defaultValue: false,
 			envVars: map[string]string{
-				"TEST_BOOL":             "false",
+				"TEST_BOOL":              "false",
 				"GOBUILDCACHE_TEST_BOOL": "true",
 			},
 			expected: true,
@@ -138,7 +138,7 @@ func TestGetEnvBoolWithPrefix(t *testing.T) {
 			key:          "TEST_BOOL",
 			defaultValue: true,
 			envVars: map[string]string{
-				"TEST_BOOL":             "true",
+				"TEST_BOOL":              "true",
 				"GOBUILDCACHE_TEST_BOOL": "false",
 			},
 			expected: false,
@@ -238,7 +238,7 @@ func TestGetEnvFloatWithPrefix(t *testing.T) {
 			key:          "TEST_FLOAT",
 			defaultValue: 0.0,
 			envVars: map[string]string{
-				"TEST_FLOAT":             "0.5",
+				"TEST_FLOAT":              "0.5",
 				"GOBUILDCACHE_TEST_FLOAT": "0.9",
 			},
 			expected: 0.9,

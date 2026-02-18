@@ -37,7 +37,7 @@ func NewError(backend Backend, errorRate float64) *Error {
 	return &Error{
 		backend:   backend,
 		errorRate: errorRate,
-		rng:       rand.New(rand.NewSource(time.Now().UnixNano())),
+		rng:       rand.New(rand.NewSource(time.Now().UnixNano())), //nolint:gosec // error injection doesn't need crypto rand
 	}
 }
 
@@ -103,6 +103,6 @@ func (e *Error) Clear() error {
 
 // GetStats returns the number of errors injected for each operation type.
 // This method is thread-safe.
-func (e *Error) GetStats() (putErrors, getErrors, closeErrors, clearErrors int64) {
+func (e *Error) GetStats() (int64, int64, int64, int64) {
 	return e.putErrors.Load(), e.getErrors.Load(), e.closeErrors.Load(), e.clearErrors.Load()
 }

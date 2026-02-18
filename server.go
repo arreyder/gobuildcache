@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -70,11 +71,11 @@ type CacheProg struct {
 		w *bufio.Writer
 	}
 
-	debug            bool
-	printStats       bool
+	debug             bool
+	printStats        bool
 	printStatsMachine bool
-	compression      bool
-	logger           *slog.Logger
+	compression       bool
+	logger            *slog.Logger
 
 	// Latency tracking using DDSketch for quantile estimation.
 	latencyTracker *metrics.LatencyTracker
@@ -129,12 +130,12 @@ type CacheProg struct {
 
 // CacheProgOptions holds configuration for NewCacheProg.
 type CacheProgOptions struct {
-	Debug            bool
-	PrintStats       bool
+	Debug             bool
+	PrintStats        bool
 	PrintStatsMachine bool
-	Compression      bool
-	TouchOnGet       bool
-	ConditionalPut   bool
+	Compression       bool
+	TouchOnGet        bool
+	ConditionalPut    bool
 }
 
 // NewCacheProg creates a new cache program instance.
@@ -193,7 +194,7 @@ func (cp *CacheProg) Run() error {
 	// Process requests concurrently
 	for {
 		req, err := cp.readRequest()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -432,8 +433,17 @@ func (cp *CacheProg) Run() error {
 			ageMaxHours = ageStats.Max * msToHours
 		}
 
-		fmt.Fprintf(os.Stderr, "gobuildcache gets=%d hits=%d misses=%d hit_rate=%.1f local_hits=%d backend_hits=%d puts=%d puts_skipped=%d backend_bytes_read=%d backend_bytes_written=%d touches=%d touches_skipped_fresh=%d entry_age_p50_hours=%.1f entry_age_max_hours=%.1f\n",
-			getCount, hitCount, missCount, hitRate, localCacheHits, backendCacheHits, putCount, putSkippedBackend, backendBytesRead, backendBytesWritten, touchCount, touchSkippedFresh, ageP50Hours, ageMaxHours)
+		fmt.Fprintf(os.Stderr,
+			"gobuildcache gets=%d hits=%d misses=%d hit_rate=%.1f"+
+				" local_hits=%d backend_hits=%d puts=%d puts_skipped=%d"+
+				" backend_bytes_read=%d backend_bytes_written=%d"+
+				" touches=%d touches_skipped_fresh=%d"+
+				" entry_age_p50_hours=%.1f entry_age_max_hours=%.1f\n",
+			getCount, hitCount, missCount, hitRate,
+			localCacheHits, backendCacheHits, putCount, putSkippedBackend,
+			backendBytesRead, backendBytesWritten,
+			touchCount, touchSkippedFresh,
+			ageP50Hours, ageMaxHours)
 	}
 
 	return nil
@@ -848,7 +858,7 @@ func (cp *CacheProg) readRequest() (*Request, error) {
 	// Read the request line
 	line, err := cp.readLine()
 	if err != nil {
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return nil, io.EOF
 		}
 		return nil, fmt.Errorf("failed to read request: %w", err)
@@ -864,7 +874,7 @@ func (cp *CacheProg) readRequest() (*Request, error) {
 		// Read the body line
 		bodyLine, err := cp.readLine()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				// EOF reached without finding body - connection closed
 				return nil, io.EOF
 			}

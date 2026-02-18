@@ -15,18 +15,18 @@ import (
 
 // Global flags
 var (
-	debug            bool
-	printStats       bool
+	debug             bool
+	printStats        bool
 	printStatsMachine bool
-	backendType      string
-	lockingType      string
-	lockDir          string
-	cacheDir         string
-	s3Bucket         string
-	s3Prefix         string
-	errorRate        float64
-	compression      bool
-	asyncBackend     bool
+	backendType       string
+	lockingType       string
+	lockDir           string
+	cacheDir          string
+	s3Bucket          string
+	s3Prefix          string
+	errorRate         float64
+	compression       bool
+	asyncBackend      bool
 	touchOnGet        bool
 	touchAgeThreshold time.Duration
 	conditionalPut    bool
@@ -65,20 +65,20 @@ func runServerCommand() {
 	// Get defaults from environment variables.
 	// All variables support both GOBUILDCACHE_<KEY> and <KEY> forms, with prefixed taking precedence.
 	var (
-		serverFlags         = flag.NewFlagSet("server", flag.ExitOnError)
-		debugDefault        = getEnvBoolWithPrefix("DEBUG", false)
-		printStatsDefault   = getEnvBoolWithPrefix("PRINT_STATS", true)
-		backendDefault      = getEnvWithPrefix("BACKEND_TYPE", getEnv("BACKEND", "disk"))
-		lockTypeDefault     = getEnvWithPrefix("LOCK_TYPE", "fslock")
-		lockDirDefault      = getEnvWithPrefix("LOCK_DIR", filepath.Join(os.TempDir(), "gobuildcache", "locks"))
-		cacheDirDefault     = getEnvWithPrefix("CACHE_DIR", filepath.Join(os.TempDir(), "gobuildcache", "cache"))
-		s3BucketDefault     = getEnvWithPrefix("S3_BUCKET", "")
-		s3PrefixDefault     = getEnvWithPrefix("S3_PREFIX", "gobuildcache/")
-		errorRateDefault    = getEnvFloatWithPrefix("ERROR_RATE", 0.0)
-		compressionDefault      = getEnvBoolWithPrefix("COMPRESSION", true)
-		asyncBackendDefault     = getEnvBoolWithPrefix("ASYNC_BACKEND", true)
-		touchOnGetDefault       = getEnvBoolWithPrefix("TOUCH_ON_GET", false)
-		conditionalPutDefault   = getEnvBoolWithPrefix("CONDITIONAL_PUT", false)
+		serverFlags              = flag.NewFlagSet("server", flag.ExitOnError)
+		debugDefault             = getEnvBoolWithPrefix("DEBUG", false)
+		printStatsDefault        = getEnvBoolWithPrefix("PRINT_STATS", true)
+		backendDefault           = getEnvWithPrefix("BACKEND_TYPE", getEnv("BACKEND", "disk"))
+		lockTypeDefault          = getEnvWithPrefix("LOCK_TYPE", "fslock")
+		lockDirDefault           = getEnvWithPrefix("LOCK_DIR", filepath.Join(os.TempDir(), "gobuildcache", "locks"))
+		cacheDirDefault          = getEnvWithPrefix("CACHE_DIR", filepath.Join(os.TempDir(), "gobuildcache", "cache"))
+		s3BucketDefault          = getEnvWithPrefix("S3_BUCKET", "")
+		s3PrefixDefault          = getEnvWithPrefix("S3_PREFIX", "gobuildcache/")
+		errorRateDefault         = getEnvFloatWithPrefix("ERROR_RATE", 0.0)
+		compressionDefault       = getEnvBoolWithPrefix("COMPRESSION", true)
+		asyncBackendDefault      = getEnvBoolWithPrefix("ASYNC_BACKEND", true)
+		touchOnGetDefault        = getEnvBoolWithPrefix("TOUCH_ON_GET", false)
+		conditionalPutDefault    = getEnvBoolWithPrefix("CONDITIONAL_PUT", false)
 		printStatsMachineDefault = getEnvBoolWithPrefix("STATS_MACHINE", false)
 	)
 	serverFlags.BoolVar(&debug, "debug", debugDefault, "Enable debug logging to stderr (env: DEBUG)")
@@ -94,7 +94,9 @@ func runServerCommand() {
 	serverFlags.BoolVar(&compression, "compression", compressionDefault, "Enable LZ4 compression for backend storage (env: COMPRESSION)")
 	serverFlags.BoolVar(&asyncBackend, "async-backend", asyncBackendDefault, "Enable async backend writer for non-blocking PUT operations (env: ASYNC_BACKEND)")
 	serverFlags.BoolVar(&touchOnGet, "touch-on-get", touchOnGetDefault, "Touch S3 objects on GET to reset lifecycle expiry (env: TOUCH_ON_GET)")
-	serverFlags.DurationVar(&touchAgeThreshold, "touch-age-threshold", getEnvDurationWithPrefix("TOUCH_AGE_THRESHOLD", 0), "Only touch objects older than this duration, e.g. 84h (env: TOUCH_AGE_THRESHOLD)")
+	touchAgeDefault := getEnvDurationWithPrefix("TOUCH_AGE_THRESHOLD", 0)
+	serverFlags.DurationVar(&touchAgeThreshold, "touch-age-threshold", touchAgeDefault,
+		"Only touch objects older than this duration, e.g. 84h (env: TOUCH_AGE_THRESHOLD)")
 	serverFlags.BoolVar(&conditionalPut, "conditional-put", conditionalPutDefault, "Skip backend PUT if object already exists (env: CONDITIONAL_PUT)")
 
 	serverFlags.Usage = func() {
@@ -133,7 +135,7 @@ func runServerCommand() {
 		fmt.Fprintf(os.Stderr, "  GOBUILDCACHE_BACKEND_TYPE=s3 %s -s3-bucket=my-cache-bucket -debug\n", os.Args[0])
 	}
 
-	serverFlags.Parse(os.Args[1:])
+	_ = serverFlags.Parse(os.Args[1:])
 	runServer()
 }
 
@@ -179,7 +181,7 @@ func runClearCommand() {
 		fmt.Fprintf(os.Stderr, "  GOBUILDCACHE_BACKEND_TYPE=s3 GOBUILDCACHE_S3_BUCKET=my-cache-bucket %s clear\n", os.Args[0])
 	}
 
-	clearFlags.Parse(os.Args[2:])
+	_ = clearFlags.Parse(os.Args[2:])
 	runClear()
 }
 
@@ -214,7 +216,7 @@ func runClearLocalCommand() {
 		fmt.Fprintf(os.Stderr, "  GOBUILDCACHE_CACHE_DIR=/var/cache/go %s clear-local\n", os.Args[0])
 	}
 
-	clearLocalFlags.Parse(os.Args[2:])
+	_ = clearLocalFlags.Parse(os.Args[2:])
 
 	// Clear the local cache directory
 	if err := clearLocalCache(cacheDir); err != nil {
@@ -262,7 +264,7 @@ func runClearRemoteCommand() {
 		fmt.Fprintf(os.Stderr, "  GOBUILDCACHE_BACKEND_TYPE=s3 GOBUILDCACHE_S3_BUCKET=my-cache-bucket %s clear-remote\n", os.Args[0])
 	}
 
-	clearRemoteFlags.Parse(os.Args[2:])
+	_ = clearRemoteFlags.Parse(os.Args[2:])
 
 	// Create backend
 	backend, err := createBackend()
@@ -312,12 +314,12 @@ func runServer() {
 	}
 
 	prog, err := NewCacheProg(backend, lockingGroup, cacheDir, CacheProgOptions{
-		Debug:            debug,
-		PrintStats:       printStats,
+		Debug:             debug,
+		PrintStats:        printStats,
 		PrintStatsMachine: printStatsMachine,
-		Compression:      compression,
-		TouchOnGet:       touchOnGet,
-		ConditionalPut:   conditionalPut,
+		Compression:       compression,
+		TouchOnGet:        touchOnGet,
+		ConditionalPut:    conditionalPut,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating cache program: %v\n", err)

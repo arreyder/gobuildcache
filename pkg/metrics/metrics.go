@@ -42,7 +42,7 @@ func (lt *LatencyTracker) Record(operation string, duration time.Duration) {
 	}
 
 	// Record duration in milliseconds
-	sketch.Add(float64(duration.Microseconds()) / 1000.0)
+	_ = sketch.Add(float64(duration.Microseconds()) / 1000.0)
 }
 
 // RecordFunc wraps a function and records its execution time.
@@ -102,22 +102,22 @@ func (lt *LatencyTracker) GetStats(operation string) (Stats, error) {
 		return Stats{Operation: operation}, nil
 	}
 
-	min, _ := sketch.GetMinValue()
+	minVal, _ := sketch.GetMinValue()
 	p50, _ := sketch.GetValueAtQuantile(0.50)
 	p90, _ := sketch.GetValueAtQuantile(0.90)
 	p95, _ := sketch.GetValueAtQuantile(0.95)
 	p99, _ := sketch.GetValueAtQuantile(0.99)
-	max, _ := sketch.GetMaxValue()
+	maxVal, _ := sketch.GetMaxValue()
 
 	return Stats{
 		Operation: operation,
 		Count:     int64(count),
-		Min:       min,
+		Min:       minVal,
 		P50:       p50,
 		P90:       p90,
 		P95:       p95,
 		P99:       p99,
-		Max:       max,
+		Max:       maxVal,
 	}, nil
 }
 
