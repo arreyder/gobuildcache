@@ -31,7 +31,7 @@ type S3 struct {
 // prefix is an optional prefix for all S3 keys (e.g., "cache/" or "").
 // touchThreshold controls debounced touch: if >0, Touch only issues a CopyObject
 // when the object's LastModified is older than this duration. Use 0 to always touch.
-func NewS3(bucket, prefix string, touchThreshold time.Duration) (*S3, error) {
+func NewS3(bucket, prefix string, touchThreshold time.Duration, pathStyle bool) (*S3, error) {
 	ctx := context.Background()
 
 	// Load AWS config from environment/credentials
@@ -40,7 +40,12 @@ func NewS3(bucket, prefix string, touchThreshold time.Duration) (*S3, error) {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	client := s3.NewFromConfig(cfg)
+	var client *s3.Client
+	if pathStyle {
+		client = s3.NewFromConfig(cfg, func(o *s3.Options) { o.UsePathStyle = true })
+	} else {
+		client = s3.NewFromConfig(cfg)
+	}
 
 	backend := &S3{
 		client:         client,
