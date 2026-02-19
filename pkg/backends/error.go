@@ -101,6 +101,11 @@ func (e *Error) Clear() error {
 	return e.backend.Clear()
 }
 
+// Unwrap returns the underlying backend.
+func (e *Error) Unwrap() Backend {
+	return e.backend
+}
+
 // GetStats returns the number of errors injected for each operation type.
 // This method is thread-safe.
 func (e *Error) GetStats() (int64, int64, int64, int64) {

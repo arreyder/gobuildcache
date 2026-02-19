@@ -154,6 +154,11 @@ func (abw *AsyncBackendWriter) Close() error {
 	return err
 }
 
+// Unwrap returns the underlying backend.
+func (abw *AsyncBackendWriter) Unwrap() Backend {
+	return abw.backend
+}
+
 // Clear passes through to the underlying backend
 func (abw *AsyncBackendWriter) Clear() error {
 	return abw.backend.Clear()

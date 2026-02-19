@@ -11,6 +11,7 @@
   - [Debounced Touch](#debounced-touch)
   - [Conditional PUT](#conditional-put)
   - [Lifecycle-Aware Metrics](#lifecycle-aware-metrics)
+- [Read-Only Mode](#read-only-mode)
 - [Local Testing with MinIO](#local-testing-with-minio)
 - [How it Works](#how-it-works)
   - [Architecture Overview](#architecture-overview)
@@ -169,6 +170,7 @@ All environment variables support both `GOBUILDCACHE_<KEY>` and `<KEY>` forms (e
 | `-touch-on-get` | `GOBUILDCACHE_TOUCH_ON_GET` | `false` | Touch S3 objects on GET to reset lifecycle expiry |
 | `-touch-age-threshold` | `GOBUILDCACHE_TOUCH_AGE_THRESHOLD` | `0` | Only touch objects older than this duration (e.g. `84h`) |
 | `-conditional-put` | `GOBUILDCACHE_CONDITIONAL_PUT` | `false` | Skip backend PUT if object already exists |
+| `-readonly` | `GOBUILDCACHE_READONLY` | `false` | Suppress backend writes (Put/Touch); reads pass through |
 | `-debug` | `GOBUILDCACHE_DEBUG` | `false` | Enable debug logging |
 | `-stats` | `GOBUILDCACHE_PRINT_STATS` | `true` | Print cache statistics on exit |
 | `-stats-machine` | `GOBUILDCACHE_STATS_MACHINE` | `false` | Print one-line machine-readable stats on exit |
@@ -193,6 +195,23 @@ Enable `-conditional-put` to perform a `HeadObject` check before uploading. If t
 ## Lifecycle-Aware Metrics
 
 Cache statistics include the age of backend cache hits (hours since original PUT) using DDSketch quantile estimation. The human-readable stats report p50/p90/p99/max entry age, and the machine-readable output (`-stats-machine`) includes `entry_age_p50_hours` and `entry_age_max_hours`. If entries are approaching your lifecycle policy duration, the policy may be too short.
+
+# Read-Only Mode
+
+Enable `-readonly` (or `GOBUILDCACHE_READONLY=true`) to allow CI workers to **consume** the shared S3 cache without **writing** to it. This is ideal for PR builds or other jobs that should benefit from cache hits but must not pollute the shared cache.
+
+In read-only mode:
+- **GET / Has** requests pass through to S3 normally.
+- **PUT / Touch** operations become no-ops — the local disk cache still works, but nothing is uploaded to S3.
+- **Clear** returns an error so destructive operations are never silently ignored.
+
+```bash
+export GOBUILDCACHE_READONLY=true
+export GOBUILDCACHE_BACKEND_TYPE=s3
+export GOBUILDCACHE_S3_BUCKET=my-cache-bucket
+export GOCACHEPROG=gobuildcache
+go test ./...
+```
 
 # Local Testing with MinIO
 
