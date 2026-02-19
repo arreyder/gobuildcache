@@ -375,6 +375,12 @@ func (cp *CacheProg) Run() error {
 				putSkippedBackend)
 		}
 
+		// Print read-only statistics if read-only wrapper is present
+		if roStats := cp.getReadOnlyStats(); roStats != nil {
+			fmt.Fprintf(os.Stderr, "  Read-only mode: %d puts skipped, %d touches skipped, %d clears blocked\n",
+				roStats.PutsSkipped, roStats.TouchesSkipped, roStats.ClearsBlocked)
+		}
+
 		// Print backend hit entry age distribution (lifecycle health)
 		if ageStats, err := cp.latencyTracker.GetStats("backend_hit_entry_age"); err == nil && ageStats.Count > 0 {
 			msToHours := 1.0 / (1000.0 * 3600.0)
@@ -425,6 +431,11 @@ func (cp *CacheProg) Run() error {
 		putSkippedBackend := cp.putSkippedBackend.Load()
 		touchSkippedFresh := cp.getAsyncTouchSkippedFresh()
 
+		var readonlyPutsSkipped int64
+		if roStats := cp.getReadOnlyStats(); roStats != nil {
+			readonlyPutsSkipped = roStats.PutsSkipped
+		}
+
 		// Get entry age percentiles for machine stats
 		var ageP50Hours, ageMaxHours float64
 		if ageStats, err := cp.latencyTracker.GetStats("backend_hit_entry_age"); err == nil && ageStats.Count > 0 {
@@ -438,11 +449,13 @@ func (cp *CacheProg) Run() error {
 				" local_hits=%d backend_hits=%d puts=%d puts_skipped=%d"+
 				" backend_bytes_read=%d backend_bytes_written=%d"+
 				" touches=%d touches_skipped_fresh=%d"+
+				" readonly_puts_skipped=%d"+
 				" entry_age_p50_hours=%.1f entry_age_max_hours=%.1f\n",
 			getCount, hitCount, missCount, hitRate,
 			localCacheHits, backendCacheHits, putCount, putSkippedBackend,
 			backendBytesRead, backendBytesWritten,
 			touchCount, touchSkippedFresh,
+			readonlyPutsSkipped,
 			ageP50Hours, ageMaxHours)
 	}
 
@@ -771,16 +784,40 @@ func (cp *CacheProg) handleGet(req *Request) (Response, error) {
 
 // getAsyncTouchSkippedFresh extracts the debounced touch skip count from the async backend wrapper.
 func (cp *CacheProg) getAsyncTouchSkippedFresh() int64 {
-	if abw, ok := cp.backend.(*backends.AsyncBackendWriter); ok {
-		return abw.Stats().TouchSkippedFresh
-	}
-	// If wrapped in debug, try to unwrap
-	if dbg, ok := cp.backend.(*backends.Debug); ok {
-		if abw, ok := dbg.Unwrap().(*backends.AsyncBackendWriter); ok {
+	b := cp.backend
+	for b != nil {
+		if abw, ok := b.(*backends.AsyncBackendWriter); ok {
 			return abw.Stats().TouchSkippedFresh
+		}
+		// Try to unwrap known wrapper types
+		switch w := b.(type) {
+		case *backends.Debug:
+			b = w.Unwrap()
+		case *backends.ReadOnly:
+			b = w.Unwrap()
+		default:
+			return 0
 		}
 	}
 	return 0
+}
+
+// getReadOnlyStats returns ReadOnly stats if a ReadOnly wrapper is in the chain.
+func (cp *CacheProg) getReadOnlyStats() *backends.ReadOnlyStats {
+	b := cp.backend
+	for b != nil {
+		if ro, ok := b.(*backends.ReadOnly); ok {
+			stats := ro.Stats()
+			return &stats
+		}
+		switch w := b.(type) {
+		case *backends.Debug:
+			b = w.Unwrap()
+		default:
+			return nil
+		}
+	}
+	return nil
 }
 
 // maybeTouch fires an async backend Touch if we haven't already touched this key in this build.

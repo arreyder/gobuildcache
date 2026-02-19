@@ -31,6 +31,7 @@ var (
 	touchAgeThreshold time.Duration
 	conditionalPut    bool
 	s3PathStyle       bool
+	readOnly          bool
 )
 
 func main() {
@@ -82,6 +83,7 @@ func runServerCommand() {
 		conditionalPutDefault    = getEnvBoolWithPrefix("CONDITIONAL_PUT", false)
 		printStatsMachineDefault = getEnvBoolWithPrefix("STATS_MACHINE", false)
 		s3PathStyleDefault       = getEnvBoolWithPrefix("S3_PATH_STYLE", false)
+		readOnlyDefault          = getEnvBoolWithPrefix("READONLY", false)
 	)
 	serverFlags.BoolVar(&debug, "debug", debugDefault, "Enable debug logging to stderr (env: DEBUG)")
 	serverFlags.BoolVar(&printStats, "stats", printStatsDefault, "Print cache statistics on exit (env: PRINT_STATS)")
@@ -101,6 +103,7 @@ func runServerCommand() {
 		"Only touch objects older than this duration, e.g. 84h (env: TOUCH_AGE_THRESHOLD)")
 	serverFlags.BoolVar(&conditionalPut, "conditional-put", conditionalPutDefault, "Skip backend PUT if object already exists (env: CONDITIONAL_PUT)")
 	serverFlags.BoolVar(&s3PathStyle, "s3-path-style", s3PathStyleDefault, "Use path-style S3 addressing (required for MinIO) (env: S3_PATH_STYLE)")
+	serverFlags.BoolVar(&readOnly, "readonly", readOnlyDefault, "Suppress backend writes (Put/Touch); reads still pass through (env: READONLY)")
 
 	serverFlags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [flags]\n\n", os.Args[0])
@@ -124,6 +127,7 @@ func runServerCommand() {
 		fmt.Fprintf(os.Stderr, "  TOUCH_ON_GET     Touch S3 objects on GET to reset lifecycle expiry (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  TOUCH_AGE_THRESHOLD Only touch objects older than this duration (e.g. 84h)\n")
 		fmt.Fprintf(os.Stderr, "  CONDITIONAL_PUT  Skip backend PUT if object already exists (true/false)\n")
+		fmt.Fprintf(os.Stderr, "  READONLY         Suppress backend writes; reads still pass through (true/false)\n")
 		fmt.Fprintf(os.Stderr, "  STATS_MACHINE    Print one-line machine-readable stats on exit (true/false)\n")
 		fmt.Fprintf(os.Stderr, "\nNote: Command-line flags take precedence over environment variables.\n")
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
@@ -423,6 +427,12 @@ func createBackend() (backends.Backend, error) {
 		}))
 		backend = backends.NewAsyncBackendWriter(backend, logger)
 		fmt.Fprintf(os.Stderr, "[INFO] Async backend writer enabled\n")
+	}
+
+	// Wrap with read-only backend if enabled (after async, before debug)
+	if readOnly {
+		backend = backends.NewReadOnly(backend)
+		fmt.Fprintf(os.Stderr, "[INFO] Read-only mode enabled\n")
 	}
 
 	// Wrap with debug backend if debug mode is enabled
